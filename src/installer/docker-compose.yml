@@ -46,6 +46,8 @@ services:
       - ${HOME}/.vscode-server:${HOST_HOME_DIR}/${SSH_USER}/.vscode-server
       - ${HOME}/workspace:${HOST_HOME_DIR}/${SSH_USER}/workspace
       - /var/run/docker.sock:/var/run/docker.sock
+      # Consumed and truncated in place by cmd.sh on first start.
+      - ./.sudopass:/run/devcontainer/sudopass
       - npm-global:${HOST_HOME_DIR}/${SSH_USER}/.npm-global
 
 volumes:

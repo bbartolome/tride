@@ -2,3 +2,4 @@
 .secret
 *.pem
 devcontainer_ed25519*
+.sudopass

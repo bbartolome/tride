@@ -61,9 +61,7 @@ printf '\n' >&2
 default_user="$(env_get SSH_USER)";        [ -n "$default_user" ] || default_user="$(id -un)"
 default_homedir="$(env_get HOST_HOME_DIR)"; [ -n "$default_homedir" ] || default_homedir="$(dirname "$HOME")"
 default_tshost="$(env_get TS_HOSTNAME)"
-if [ -z "$default_tshost" ]; then
-  default_tshost="$(hostname -s 2>/dev/null || hostname)-devcontainer"
-fi
+[ -n "$default_tshost" ] || default_tshost="dev"
 default_port="$(env_get SSH_PORT)";        [ -n "$default_port" ] || default_port="2222"
 default_base="${BASE_IMAGE:-}"
 [ -n "$default_base" ] || default_base="$(env_get BASE_IMAGE)"
@@ -164,6 +162,31 @@ fi
 
 # -------------------------------------------------------------- tailscale ---
 
+printf '\n== Account password ==\n\n' >&2
+
+note "used for sudo prompts and su; SSH login stays key-only"
+note "leave blank to keep the account without a password"
+
+while :; do
+  printf '  Password for %s (hidden): ' "$SSH_USER" >&2
+  IFS= read -rs sudo_password <&3 || { printf '\n' >&2; die "input ended unexpectedly - aborting"; }
+  printf '\n' >&2
+
+  if [ -z "$sudo_password" ]; then
+    note "no password set - the account stays locked"
+    break
+  fi
+
+  printf '  Confirm: ' >&2
+  IFS= read -rs sudo_password_confirm <&3 || { printf '\n' >&2; die "input ended unexpectedly - aborting"; }
+  printf '\n' >&2
+
+  if [ "$sudo_password" = "$sudo_password_confirm" ]; then
+    break
+  fi
+  note "passwords did not match - try again"
+done
+
 printf '\n== Tailscale ==\n\n' >&2
 
 existing_authkey=""
@@ -215,8 +238,14 @@ chmod 644 .env
 ( umask 077; printf 'TS_AUTHKEY=%s\n' "$TS_AUTHKEY" > .secret )
 chmod 600 .secret
 
+# Always created, even when empty: compose bind-mounts this path, and Docker
+# would otherwise materialise it as a directory. cmd.sh consumes the password
+# on first start and truncates the file in place.
+( umask 077; printf '%s\n' "$sudo_password" > .sudopass )
+chmod 600 .sudopass
+
 printf '\n' >&2
-note "wrote .env and .secret (0600)"
+note "wrote .env, .secret and .sudopass (0600)"
 
 # ------------------------------------------------------------------- start ---
 

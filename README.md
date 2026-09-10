@@ -26,10 +26,11 @@ The wizard asks for:
 | --- | --- | --- |
 | Username inside the container | your host username | `.env` |
 | Parent directory for its home | `dirname $HOME` (`/Users` on macOS) | `.env` |
-| Tailscale hostname | `$(hostname -s)-devcontainer` | `.env` |
+| Tailscale hostname | `dev` | `.env` |
 | Local loopback SSH port | `2222` | `.env` |
 | Base image | `bbartolome/devcontainer:latest` | `.env` |
 | SSH key to authorize | pick from `~/.ssh/*.pub`, or generate one | `~/.ssh/authorized_keys` |
+| Account password | blank (account stays locked) | `.sudopass` (mode 0600) |
 | Tailscale auth key | — | `.secret` (mode 0600) |
 
 It then creates any missing bind-mount sources, writes `.env` and `.secret`, and
@@ -44,8 +45,21 @@ ssh devcontainer                  # via Tailscale, if the wizard added the confi
 ssh -p 2222 <user>@127.0.0.1      # loopback fallback when the tailnet is down
 ```
 
-Authentication is **key-only**. Password login is disabled and the account has
-no password at all; `sudo` inside the container is passwordless.
+SSH authentication is **key-only** — password login over SSH is disabled and
+cannot be enabled by setting an account password.
+
+The account password the wizard asks for is for `sudo` prompts and `su` inside
+the container. `sudo` itself remains `NOPASSWD`, so it will not prompt; the
+password matters for anything else that authenticates the account. Leaving the
+prompt blank keeps the account locked, which is a valid setup.
+
+The password reaches the container through `.sudopass`, bind-mounted at
+`/run/devcontainer/sudopass`. On the first start `cmd.sh` applies it and then
+truncates that file in place, so the plaintext does not linger on the host.
+
+> Because the file is cleared after use, the password does **not** survive the
+> container being *recreated* (an image update, `up --force-recreate`) — a plain
+> restart is fine. Re-run `./wizard.sh` to set it again.
 
 ## How it fits together
 

@@ -38,7 +38,7 @@ if (exec 3</dev/tty) 2>/dev/null; then
 fi
 
 existing=()
-for f in Dockerfile docker-compose.yml wizard.sh .env .secret; do
+for f in Dockerfile docker-compose.yml wizard.sh .env .secret .sudopass; do
   [ -e "$TARGET/$f" ] && existing+=("$f")
 done
 

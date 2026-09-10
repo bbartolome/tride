@@ -8,3 +8,4 @@ devcontainer_ed25519*
 .beacon/
 .beacon-delegate/
 .claude/
+.sudopass
