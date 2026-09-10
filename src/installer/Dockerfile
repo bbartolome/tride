@@ -49,15 +49,31 @@ RUN set -eu; \
     printf 'prefix=%s/.npm-global\n' "$home" > "$home/.npmrc"; \
     mkdir -p "$home/.npm-global" "$home/.n"; \
     \
-    # Single-quoted so $HOME and $PATH reach .bashrc literally and resolve at
-    # login. The base image only ever set CHROME_BIN for root, so it is set here
-    # for the user who actually runs tests.
-    printf '%s\n' \
-      'export N_PREFIX="$HOME/.n"' \
-      'export PATH="$N_PREFIX/bin:$HOME/.npm-global/bin:$PATH"' \
-      'export CHROME_BIN=/usr/bin/chromium-browser' \
-      'export CHROME_HEADLESS_NO_SANDBOX=true' \
-      '[[ -s "$HOME/.bashrc.ext" ]] && source "$HOME/.bashrc.ext"' \
+    # Ubuntu's stock .bashrc returns early for non-interactive shells, and bash
+    # sources .bashrc for `ssh host <command>`. Anything a scripted SSH call
+    # needs must therefore go ABOVE that guard - appending leaves java, mvn and
+    # CHROME_BIN missing for every remote command. Single-quoted so $HOME and
+    # $PATH resolve at shell start, not at build time.
+    bashrc_tmp="$(mktemp)"; \
+    { \
+      printf '%s\n' \
+        '# --- devcontainer environment (kept above the non-interactive guard) ---' \
+        'export N_PREFIX="$HOME/.n"' \
+        'export PATH="$N_PREFIX/bin:$HOME/.npm-global/bin:$PATH"' \
+        'export CHROME_BIN=/usr/bin/chromium-browser' \
+        'export CHROME_HEADLESS_NO_SANDBOX=true' \
+        'export SDKMAN_DIR=/opt/sdkman' \
+        '[ -s "$SDKMAN_DIR/bin/sdkman-init.sh" ] && . "$SDKMAN_DIR/bin/sdkman-init.sh"' \
+        '# --- end devcontainer environment ---' \
+        ''; \
+      cat "$home/.bashrc"; \
+    } > "$bashrc_tmp"; \
+    cat "$bashrc_tmp" > "$home/.bashrc"; \
+    rm -f "$bashrc_tmp"; \
+    \
+    # The user's own hook stays at the bottom, where interactive customisation
+    # belongs.
+    printf '%s\n' '[[ -s "$HOME/.bashrc.ext" ]] && source "$HOME/.bashrc.ext"' \
       >> "$home/.bashrc"; \
     \
     chown -R "$SSH_USER:$SSH_USER" "$home"
