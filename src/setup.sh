@@ -33,7 +33,7 @@ docker compose version >/dev/null 2>&1 \
 # This script arrives on stdin through the pipe, so stdin is NOT the terminal.
 # Anything interactive has to go to /dev/tty explicitly.
 have_tty=false
-if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+if (exec 3</dev/tty) 2>/dev/null; then
   have_tty=true
 fi
 

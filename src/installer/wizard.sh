@@ -15,7 +15,7 @@ note() { printf 'wizard: %s\n' "$*" >&2; }
 # direct ./wizard.sh run may not be. Bind fd 3 to the tty either way.
 if [ -t 0 ]; then
   exec 3<&0
-elif [ -r /dev/tty ]; then
+elif (exec 3</dev/tty) 2>/dev/null; then
   exec 3</dev/tty
 else
   die "no terminal available for prompts - run ./wizard.sh from an interactive shell"
