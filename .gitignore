@@ -1,0 +1,10 @@
+# Written by the setup wizard on the host; never commit these.
+.env
+.secret
+*.pem
+devcontainer_ed25519*
+
+# Agent/tooling scratch state.
+.beacon/
+.beacon-delegate/
+.claude/
