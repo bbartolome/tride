@@ -3,20 +3,16 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { IncomingMessage } from 'http';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
-import type { WebuiConfigService } from '../config/webui-config.service';
 import type { Identity } from './identity.middleware';
 import { TailscaleAuthGuard } from './tailscale-auth.guard';
+import type { UsersService } from './users.service';
 
-function createConfig(adminLogins: string[]): WebuiConfigService {
+function createUsersService(
+  allowed: { role: 'admin' | 'user'; seeded: boolean } | null,
+): UsersService {
   return {
-    config: {
-      port: 8088,
-      workspaceRoot: '/root/workspace',
-      adminLogins: new Set(adminLogins),
-      stateDir: '/var/lib/devcontainer-webui',
-      tmuxSocket: 'webui',
-    },
-  } as unknown as WebuiConfigService;
+    isAllowed: jest.fn().mockResolvedValue(allowed),
+  } as unknown as UsersService;
 }
 
 function createContext(
@@ -37,18 +33,23 @@ function createContext(
 }
 
 describe('TailscaleAuthGuard', () => {
-  it('lets a null identity through on a @Public route', () => {
-    const guard = new TailscaleAuthGuard(new Reflector(), createConfig([]));
+  it('lets a null identity through on a @Public route', async () => {
+    const guard = new TailscaleAuthGuard(
+      new Reflector(),
+      createUsersService(null),
+    );
     const ctx = createContext(null, true);
-    expect(guard.canActivate(ctx)).toBe(true);
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
 
-  it('throws 401 AUTH_REQUIRED when identity is null on a non-public route', () => {
-    const guard = new TailscaleAuthGuard(new Reflector(), createConfig([]));
+  it('throws 401 AUTH_REQUIRED when identity is null on a non-public route', async () => {
+    const guard = new TailscaleAuthGuard(
+      new Reflector(),
+      createUsersService(null),
+    );
     const ctx = createContext(null, false);
-    expect(() => guard.canActivate(ctx)).toThrow(UnauthorizedException);
     try {
-      guard.canActivate(ctx);
+      await guard.canActivate(ctx);
       throw new Error('expected to throw');
     } catch (err) {
       expect(err).toBeInstanceOf(UnauthorizedException);
@@ -59,14 +60,14 @@ describe('TailscaleAuthGuard', () => {
     }
   });
 
-  it('throws 403 NOT_ALLOWED for a non-seeded login', () => {
+  it('throws 403 NOT_ALLOWED when UsersService.isAllowed returns null', async () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
-      createConfig(['admin@example.com']),
+      createUsersService(null),
     );
     const ctx = createContext({ login: 'nobody@example.com' }, false);
     try {
-      guard.canActivate(ctx);
+      await guard.canActivate(ctx);
       throw new Error('expected to throw');
     } catch (err) {
       expect(err).toBeInstanceOf(ForbiddenException);
@@ -77,14 +78,14 @@ describe('TailscaleAuthGuard', () => {
     }
   });
 
-  it('allows a seeded login and marks it role=admin, seeded=true', () => {
+  it('allows an allowed login and copies role/seeded from UsersService.isAllowed', async () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
-      createConfig(['admin@example.com']),
+      createUsersService({ role: 'admin', seeded: true }),
     );
     const identity: Identity = { login: 'admin@example.com' };
     const ctx = createContext(identity, false);
-    expect(guard.canActivate(ctx)).toBe(true);
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(identity.role).toBe('admin');
     expect(identity.seeded).toBe(true);
   });

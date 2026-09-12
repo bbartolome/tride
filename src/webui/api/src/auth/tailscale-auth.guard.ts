@@ -9,16 +9,16 @@ import { Reflector } from '@nestjs/core';
 import type { IncomingMessage } from 'http';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { ERROR_CODES } from '../common/error-codes';
-import { WebuiConfigService } from '../config/webui-config.service';
+import { UsersService } from './users.service';
 
 @Injectable()
 export class TailscaleAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly webuiConfig: WebuiConfigService,
+    private readonly usersService: UsersService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -37,20 +37,16 @@ export class TailscaleAuthGuard implements CanActivate {
       });
     }
 
-    // T4 replaces this inline membership check with
-    // `usersService.isAllowed(login)`, which layers the runtime allowlist
-    // (${WEBUI_STATE_DIR}/users.json) on top of the seeded admins below.
-    // UsersService does not exist yet (T4's deliverable), so for now this
-    // guard only knows about the boot-time seeded admin set.
-    if (this.webuiConfig.config.adminLogins.has(identity.login)) {
-      identity.role = 'admin';
-      identity.seeded = true;
-      return true;
+    const allowed = await this.usersService.isAllowed(identity.login);
+    if (allowed === null) {
+      throw new ForbiddenException({
+        code: ERROR_CODES.NOT_ALLOWED,
+        message: 'Not allowed',
+      });
     }
 
-    throw new ForbiddenException({
-      code: ERROR_CODES.NOT_ALLOWED,
-      message: 'Not allowed',
-    });
+    identity.role = allowed.role;
+    identity.seeded = allowed.seeded;
+    return true;
   }
 }
