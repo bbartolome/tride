@@ -1,0 +1,96 @@
+name: Web UI CI
+
+# pull_request only, scoped to src/webui/**: this is the fast PR gate for the
+# web UI, distinct from publish.yml which builds and pushes the ~5GB image on
+# every push to main. A `paths:` allow-list is safe here (unlike in
+# publish.yml) because pull_request events never carry a tag push - there is
+# no "release tag that touches nothing" case to silently skip.
+on:
+  pull_request:
+    paths:
+      - 'src/webui/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API (lint, test, build)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: src/webui/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/webui/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # Warnings are expected and non-fatal here: eslint currently flags
+      # @typescript-eslint/no-unsafe-argument on `app.getHttpServer()` in the
+      # supertest specs, which is a known-benign pattern (supertest's own
+      # types are loose, not our code being unsafe). Do NOT add
+      # --max-warnings 0 - that would fail the build on this pattern.
+      - name: Lint
+        run: npm run lint
+
+      # NODE_OPTIONS=--experimental-vm-modules is already set inside the
+      # `test` script in package.json (Nest 12 is pure ESM - see F2), so it
+      # is deliberately not repeated here.
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  web:
+    name: Web (build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # src/webui/web doesn't exist until Phase 4 (T20), but this workflow
+      # triggers on all of src/webui/** so it runs on every Phase 2/3 PR too.
+      # Guard on the directory's presence rather than assuming it exists, so
+      # those PRs get a clean skip instead of a hard failure. Once T20 adds
+      # the package, this step's check flips to "true" and every later step
+      # starts running automatically - this file needs NO edit for that to
+      # happen. Do not "fix" this guard away.
+      - name: Check whether src/webui/web is scaffolded yet
+        id: probe
+        run: |
+          if [ -f src/webui/web/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "src/webui/web not scaffolded yet (arrives in Phase 4) - skipping" >&2
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.probe.outputs.exists == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/webui/web/package-lock.json
+
+      - name: Install dependencies
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: src/webui/web
+        run: npm ci --no-audit --no-fund
+
+      # Build only, deliberately. A fresh `ng new` ships no `lint` script
+      # (that needs @angular-eslint) and `ng test` needs a headless browser
+      # configured, so adding either here would break every PR the moment
+      # T20 lands - the same failure the probe above exists to prevent.
+      # T20 may add them once it has actually set both up.
+      - name: Build
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: src/webui/web
+        run: npm run build
