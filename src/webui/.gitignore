@@ -1,0 +1,10 @@
+# Covers both api/ (exists now) and web/ (arrives in Phase 4). No-slash
+# patterns match at any depth under here, so this also catches the stray
+# src/webui/api/tsconfig.build.tsbuildinfo sitting at the package root.
+node_modules/
+dist/
+.angular/
+*.tsbuildinfo
+coverage/
+.env
+.env.local

@@ -1,0 +1,23 @@
+# Keeps the Docker build context lean and prevents host-built artifacts
+# (e.g. a macOS/Linux-specific compiled pty.node under node_modules) from
+# ever reaching a COPY into the image. See src/webui/api and (from Phase 4)
+# src/webui/web, which the Dockerfile COPYs into the build.
+**/node_modules
+**/dist
+**/.angular
+**/coverage
+**/*.tsbuildinfo
+
+# VCS and local tooling/agent state — never needed inside the image.
+.git
+.github
+.beacon
+.beacon-delegate
+.claude
+
+# Secrets written by the setup wizard on the host; never send to the daemon.
+.env
+.secret
+*.pem
+devcontainer_ed25519*
+.sudopass
