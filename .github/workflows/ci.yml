@@ -33,6 +33,12 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      # T16/F115: tmux is not present on the ubuntu-24.04 runner image, and
+      # TmuxService's own spec runs against the real binary (this project's
+      # precedent for testing process chokepoints) rather than a mock.
+      - name: Install tmux
+        run: sudo apt-get update -qq && sudo apt-get install -y tmux
+
       # Warnings are expected and non-fatal here: eslint currently flags
       # @typescript-eslint/no-unsafe-argument on `app.getHttpServer()` in the
       # supertest specs, which is a known-benign pattern (supertest's own
@@ -46,6 +52,13 @@ jobs:
       # is deliberately not repeated here.
       - name: Test
         run: npm test
+
+      # Pre-existing gap fixed by T16/F115: `npm test` only picks up
+      # src/**/*.spec.ts. The e2e specs under test/ (their own jest config)
+      # were never run in CI, which started mattering once WS upgrade auth
+      # and tmux session CRUD became only exercisable end to end.
+      - name: Test (e2e)
+        run: npm run test:e2e
 
       - name: Build
         run: npm run build

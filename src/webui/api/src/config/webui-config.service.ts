@@ -6,11 +6,13 @@ export interface WebuiConfig {
   adminLogins: Set<string>;
   stateDir: string;
   tmuxSocket: string;
+  tmuxConfPath: string;
 }
 
 const DEFAULT_PORT = 8088;
 const DEFAULT_STATE_DIR = '/var/lib/devcontainer-webui';
 const DEFAULT_TMUX_SOCKET = 'webui';
+const DEFAULT_TMUX_CONF_PATH = '/etc/devcontainer/webui-tmux.conf';
 
 function parsePort(raw: string | undefined): number {
   if (!raw) {
@@ -43,6 +45,7 @@ export class WebuiConfigService {
       adminLogins: parseAdminLogins(process.env.WEBUI_ADMIN_LOGINS),
       stateDir: process.env.WEBUI_STATE_DIR ?? DEFAULT_STATE_DIR,
       tmuxSocket: process.env.WEBUI_TMUX_SOCKET ?? DEFAULT_TMUX_SOCKET,
+      tmuxConfPath: process.env.WEBUI_TMUX_CONF ?? DEFAULT_TMUX_CONF_PATH,
     });
   }
 
