@@ -1185,4 +1185,281 @@ describe('Git (e2e)', () => {
     }).toString();
     expect(branches).not.toContain('unmerged');
   });
+
+  it('GET /api/git/remotes with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/remotes')
+      .query({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('GET /api/git/remotes parses `git remote -v` into fetch/push URL pairs', async () => {
+    execFileSync(
+      'git',
+      ['remote', 'add', 'origin', '/tmp/does-not-need-to-exist.git'],
+      { cwd: workspace.plainRepo },
+    );
+
+    const res = await request(app.getHttpServer())
+      .get('/api/git/remotes')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    expect(res.body).toEqual([
+      {
+        name: 'origin',
+        fetchUrl: '/tmp/does-not-need-to-exist.git',
+        pushUrl: '/tmp/does-not-need-to-exist.git',
+      },
+    ]);
+  });
+
+  it('POST /api/git/fetch with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/fetch')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/pull with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/pull')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/push with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/push')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/push with force:true and a wrong/missing confirm -> 400 CONFIRMATION_REQUIRED, and makes no git call at all', async () => {
+    const runSpy = jest.spyOn(GitRunner.prototype, 'run');
+    try {
+      const wrong = await request(app.getHttpServer())
+        .post('/api/git/push')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'plain-repo', force: true, confirm: 'nope' })
+        .expect(400);
+      expect(wrong.body).toMatchObject({ code: 'CONFIRMATION_REQUIRED' });
+
+      const missing = await request(app.getHttpServer())
+        .post('/api/git/push')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'plain-repo', force: true })
+        .expect(400);
+      expect(missing.body).toMatchObject({ code: 'CONFIRMATION_REQUIRED' });
+
+      expect(runSpy).not.toHaveBeenCalled();
+    } finally {
+      runSpy.mockRestore();
+    }
+  });
+
+  it('POST /api/git/pull with diverged histories fails cleanly (422 GIT_COMMAND_FAILED), proving --ff-only prevents a merge commit (no MERGE_HEAD, HEAD unchanged)', async () => {
+    // Reuses createAheadBehindFixture as-is (F74), same workspace-root-swap
+    // technique as the /api/git/branches ahead/behind test above: the
+    // fixture's `dir`/`bareDir` live under their own mkdtemp parent, so a
+    // separate app instance points its workspace root there for the
+    // duration of this test only.
+    const fixture: AheadBehindFixture = createAheadBehindFixture();
+    const savedRoot = process.env.WEBUI_WORKSPACE_ROOT;
+    process.env.WEBUI_WORKSPACE_ROOT = fixture.parent;
+    let pullApp: INestApplication | undefined;
+    try {
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      }).compile();
+      pullApp = moduleFixture.createNestApplication();
+      await pullApp.init();
+
+      const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: fixture.dir,
+      })
+        .toString()
+        .trim();
+
+      const res = await request(pullApp.getHttpServer())
+        .post('/api/git/pull')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'local' })
+        .expect(422);
+      expect(res.body).toMatchObject({ code: 'GIT_COMMAND_FAILED' });
+
+      expect(existsSync(join(fixture.dir, '.git', 'MERGE_HEAD'))).toBe(false);
+      expect(
+        execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fixture.dir })
+          .toString()
+          .trim(),
+      ).toBe(headBefore);
+    } finally {
+      if (pullApp) {
+        await pullApp.close();
+      }
+      if (savedRoot === undefined) {
+        delete process.env.WEBUI_WORKSPACE_ROOT;
+      } else {
+        process.env.WEBUI_WORKSPACE_ROOT = savedRoot;
+      }
+      removeAheadBehindFixture(fixture);
+    }
+  });
+
+  it('POST /api/git/fetch, /api/git/pull and /api/git/push exercise a real filesystem-transport remote end to end, through the full app', async () => {
+    // No fixture reuse here: this needs a bare remote OUTSIDE the workspace
+    // root (a git remote URL is never validated by WorkspacePathService)
+    // plus a clone INSIDE it as the `repo` under test, which none of the
+    // existing fixtures shape quite this way.
+    const parent = mkdtempSync(join(tmpdir(), 'git-remote-e2e-'));
+    const bareDir = join(parent, 'remote.git');
+    mkdirSync(bareDir);
+    execFileSync(
+      'git',
+      ['init', '--quiet', '--bare', '--initial-branch=main'],
+      { cwd: bareDir },
+    );
+
+    const root = join(parent, 'workspace');
+    mkdirSync(root);
+    const localDir = join(root, 'repo');
+    execFileSync('git', ['clone', '--quiet', bareDir, localDir]);
+    execFileSync('git', ['config', 'user.name', 'Fixture User'], {
+      cwd: localDir,
+    });
+    execFileSync('git', ['config', 'user.email', 'fixture@example.com'], {
+      cwd: localDir,
+    });
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], {
+      cwd: localDir,
+    });
+    writeAndCommitViaCli(localDir, 'seed.txt', 'seed\n', 'seed commit');
+    execFileSync('git', ['push', '--quiet', 'origin', 'main'], {
+      cwd: localDir,
+    });
+    execFileSync(
+      'git',
+      ['branch', '--quiet', '--set-upstream-to=origin/main', 'main'],
+      { cwd: localDir },
+    );
+
+    // A second clone advances the remote, simulating a teammate's push that
+    // happened since `localDir` last synced.
+    const otherClone = join(parent, 'other-clone');
+    execFileSync('git', ['clone', '--quiet', bareDir, otherClone]);
+    execFileSync('git', ['config', 'user.name', 'Fixture User'], {
+      cwd: otherClone,
+    });
+    execFileSync('git', ['config', 'user.email', 'fixture@example.com'], {
+      cwd: otherClone,
+    });
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], {
+      cwd: otherClone,
+    });
+    writeAndCommitViaCli(
+      otherClone,
+      'teammate.txt',
+      'teammate\n',
+      'teammate commit',
+    );
+    execFileSync('git', ['push', '--quiet', 'origin', 'main'], {
+      cwd: otherClone,
+    });
+
+    const savedRoot = process.env.WEBUI_WORKSPACE_ROOT;
+    process.env.WEBUI_WORKSPACE_ROOT = root;
+    let remoteApp: INestApplication | undefined;
+    try {
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      }).compile();
+      remoteApp = moduleFixture.createNestApplication();
+      await remoteApp.init();
+
+      // fetch: updates the origin/main tracking ref only, never the
+      // working tree.
+      await request(remoteApp.getHttpServer())
+        .post('/api/git/fetch')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'repo' })
+        .expect(200);
+      expect(existsSync(join(localDir, 'teammate.txt'))).toBe(false);
+      const trackingSha = execFileSync('git', ['rev-parse', 'origin/main'], {
+        cwd: localDir,
+      })
+        .toString()
+        .trim();
+      const bareSha = execFileSync('git', ['rev-parse', 'main'], {
+        cwd: bareDir,
+      })
+        .toString()
+        .trim();
+      expect(trackingSha).toBe(bareSha);
+
+      // pull --ff-only: local hasn't diverged, so this actually merges the
+      // teammate's commit in.
+      await request(remoteApp.getHttpServer())
+        .post('/api/git/pull')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'repo' })
+        .expect(200);
+      expect(existsSync(join(localDir, 'teammate.txt'))).toBe(true);
+
+      // push: local's own new commit reaches the bare remote.
+      writeAndCommitViaCli(localDir, 'mine.txt', 'mine\n', 'my commit');
+      await request(remoteApp.getHttpServer())
+        .post('/api/git/push')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'repo' })
+        .expect(200);
+      const bareShaAfterPush = execFileSync('git', ['rev-parse', 'main'], {
+        cwd: bareDir,
+      })
+        .toString()
+        .trim();
+      const localHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: localDir,
+      })
+        .toString()
+        .trim();
+      expect(bareShaAfterPush).toBe(localHead);
+    } finally {
+      if (remoteApp) {
+        await remoteApp.close();
+      }
+      if (savedRoot === undefined) {
+        delete process.env.WEBUI_WORKSPACE_ROOT;
+      } else {
+        process.env.WEBUI_WORKSPACE_ROOT = savedRoot;
+      }
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
 });

@@ -5,6 +5,7 @@ import { GitBranchService } from './git-branch.service';
 import { GitChangesService } from './git-changes.service';
 import { GitDiffService } from './git-diff.service';
 import { GitLogService } from './git-log.service';
+import { GitRemoteService } from './git-remote.service';
 import { GitRepoService } from './git-repo.service';
 import { GitRunner } from './git-runner.service';
 import { GitStatusService } from './git-status.service';
@@ -22,6 +23,7 @@ import { GitStatusService } from './git-status.service';
     GitLogService,
     GitChangesService,
     GitBranchService,
+    GitRemoteService,
   ],
   exports: [
     GitRunner,
@@ -31,6 +33,7 @@ import { GitStatusService } from './git-status.service';
     GitLogService,
     GitChangesService,
     GitBranchService,
+    GitRemoteService,
   ],
 })
 export class GitModule {}

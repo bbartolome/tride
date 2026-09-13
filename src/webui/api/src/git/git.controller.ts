@@ -28,9 +28,17 @@ import {
   GitDiffService,
 } from './git-diff.service';
 import { GitLogEntry, GitLogService, GitShowResult } from './git-log.service';
+import {
+  FetchOptions,
+  GitRemoteService,
+  PullOptions,
+  PushOptions,
+  RemoteInfo,
+} from './git-remote.service';
 import { GitRepoService, RepoSummary } from './git-repo.service';
 import { toHttpException } from './git-runner.service';
 import { parseBoolFlag, parseIntParam } from './git-query.util';
+import { resolveSshAuthSock } from './ssh-auth-sock.util';
 import { GitStatusResult, GitStatusService } from './git-status.service';
 
 function validationError(message: string): BadRequestException {
@@ -178,6 +186,53 @@ function parseCommitBody(record: Record<string, unknown>): CommitOptions {
   };
 }
 
+function parseOptionalString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  return requireNonEmptyString(value, key);
+}
+
+function parseFetchBody(record: Record<string, unknown>): FetchOptions {
+  return {
+    remote: parseOptionalString(record, 'remote'),
+    prune: record.prune === true,
+  };
+}
+
+function parsePullBody(record: Record<string, unknown>): PullOptions {
+  return {
+    remote: parseOptionalString(record, 'remote'),
+    branch: parseOptionalString(record, 'branch'),
+  };
+}
+
+// The single literal `confirm` must equal for a forced /git/push to
+// proceed — checked, and rejected, BEFORE any git call whatsoever, same
+// destructive-confirmation shape as /git/discard's `DISCARD_CONFIRM_LITERAL`
+// above. Reuses CONFIRMATION_REQUIRED (F89) rather than adding a new code.
+const FORCE_PUSH_CONFIRM_LITERAL = 'force push';
+
+function parsePushBody(record: Record<string, unknown>): PushOptions {
+  const force = record.force === true;
+  if (force && record.confirm !== FORCE_PUSH_CONFIRM_LITERAL) {
+    throw new BadRequestException({
+      code: ERROR_CODES.CONFIRMATION_REQUIRED,
+      message: `confirm must equal "${FORCE_PUSH_CONFIRM_LITERAL}"`,
+    });
+  }
+  return {
+    remote: parseOptionalString(record, 'remote'),
+    branch: parseOptionalString(record, 'branch'),
+    setUpstream: record.setUpstream === true,
+    force,
+  };
+}
+
 const DEFAULT_DIFF_CONTEXT = 3;
 const MAX_DIFF_CONTEXT = 100;
 const DEFAULT_LOG_LIMIT = 50;
@@ -193,6 +248,7 @@ export class GitController {
     private readonly gitLogService: GitLogService,
     private readonly gitChangesService: GitChangesService,
     private readonly gitBranchService: GitBranchService,
+    private readonly gitRemoteService: GitRemoteService,
   ) {}
 
   @Get('repos')
@@ -417,6 +473,72 @@ export class GitController {
     const opts = parseDeleteBranchBody(record);
     try {
       await this.gitBranchService.deleteBranch(repoRoot, opts);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Get('git/remotes')
+  async remotes(@Query('repo') repo?: string): Promise<RemoteInfo[]> {
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(repo),
+    );
+    try {
+      return await this.gitRemoteService.listRemotes(repoRoot);
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/fetch')
+  @HttpCode(200)
+  async fetch(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parseFetchBody(record);
+    try {
+      // Resolved fresh on every request, never cached at boot (see
+      // `resolveSshAuthSock`'s doc comment) — the agent may be started
+      // later by an SSH login, and this is what makes push/pull/fetch start
+      // working again without restarting this server.
+      await this.gitRemoteService.fetch(repoRoot, opts, resolveSshAuthSock());
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/pull')
+  @HttpCode(200)
+  async pull(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parsePullBody(record);
+    try {
+      await this.gitRemoteService.pull(repoRoot, opts, resolveSshAuthSock());
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/push')
+  @HttpCode(200)
+  async push(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    // Checked before the git call this guards, per the destructive-
+    // confirmation contract shared with /git/discard — see `parsePushBody`.
+    const opts = parsePushBody(record);
+    try {
+      await this.gitRemoteService.push(repoRoot, opts, resolveSshAuthSock());
       return { ok: true };
     } catch (err) {
       throw toHttpException(err);
