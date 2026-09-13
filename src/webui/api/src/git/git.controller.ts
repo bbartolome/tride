@@ -2,12 +2,20 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Post,
   Query,
 } from '@nestjs/common';
 import { ERROR_CODES } from '../common/error-codes';
+import {
+  BranchListResult,
+  CheckoutOptions,
+  CreateBranchOptions,
+  DeleteBranchOptions,
+  GitBranchService,
+} from './git-branch.service';
 import {
   CommitOptions,
   CommitResult,
@@ -113,6 +121,49 @@ function parseDiscardBody(record: Record<string, unknown>): DiscardBody {
   return { paths: rawPaths };
 }
 
+function requireNonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw validationError(`${label} is required and must be a string`);
+  }
+  return value;
+}
+
+function parseOptionalStartPoint(
+  record: Record<string, unknown>,
+): string | undefined {
+  const { startPoint } = record;
+  if (startPoint === undefined) {
+    return undefined;
+  }
+  return requireNonEmptyString(startPoint, 'startPoint');
+}
+
+function parseCheckoutBody(record: Record<string, unknown>): CheckoutOptions {
+  return {
+    branch: requireNonEmptyString(record.branch, 'branch'),
+    create: record.create === true,
+    startPoint: parseOptionalStartPoint(record),
+  };
+}
+
+function parseCreateBranchBody(
+  record: Record<string, unknown>,
+): CreateBranchOptions {
+  return {
+    name: requireNonEmptyString(record.name, 'name'),
+    startPoint: parseOptionalStartPoint(record),
+  };
+}
+
+function parseDeleteBranchBody(
+  record: Record<string, unknown>,
+): DeleteBranchOptions {
+  return {
+    name: requireNonEmptyString(record.name, 'name'),
+    force: record.force === true,
+  };
+}
+
 function parseCommitBody(record: Record<string, unknown>): CommitOptions {
   const message = record.message;
   if (typeof message !== 'string' || message.trim().length === 0) {
@@ -141,6 +192,7 @@ export class GitController {
     private readonly gitDiffService: GitDiffService,
     private readonly gitLogService: GitLogService,
     private readonly gitChangesService: GitChangesService,
+    private readonly gitBranchService: GitBranchService,
   ) {}
 
   @Get('repos')
@@ -306,6 +358,66 @@ export class GitController {
     const opts = parseCommitBody(record);
     try {
       return await this.gitChangesService.commit(repoRoot, opts);
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Get('git/branches')
+  async branches(@Query('repo') repo?: string): Promise<BranchListResult> {
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(repo),
+    );
+    try {
+      return await this.gitBranchService.listBranches(repoRoot);
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/checkout')
+  @HttpCode(200)
+  async checkout(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parseCheckoutBody(record);
+    try {
+      await this.gitBranchService.checkout(repoRoot, opts);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/branch')
+  @HttpCode(200)
+  async createBranch(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parseCreateBranchBody(record);
+    try {
+      await this.gitBranchService.createBranch(repoRoot, opts);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Delete('git/branch')
+  @HttpCode(200)
+  async deleteBranch(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parseDeleteBranchBody(record);
+    try {
+      await this.gitBranchService.deleteBranch(repoRoot, opts);
+      return { ok: true };
     } catch (err) {
       throw toHttpException(err);
     }

@@ -1,6 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { ERROR_CODES } from '../common/error-codes';
-import { GitCommandError, GitRunner } from './git-runner.service';
+import { GitRunner } from './git-runner.service';
 
 export interface StageOptions {
   paths?: string[];
@@ -24,15 +24,6 @@ export interface CommitResult {
 // real git 2.43: this line goes to STDOUT, not stderr (git still exits 1),
 // so both streams must be checked.
 const NOTHING_TO_COMMIT_RE = /nothing to commit/i;
-
-// `git restore` validates every pathspec up front and fails the ENTIRE
-// invocation — touching nothing, not even the pathspecs that DO match — the
-// moment any one of them doesn't resolve to a file git already tracks.
-// That is exactly what happens when `discard`'s `paths` names purely
-// untracked content (e.g. discarding a brand-new untracked file), which is
-// a normal, expected case for this endpoint, not an error.
-const RESTORE_UNMATCHED_PATHSPEC_RE =
-  /did not match any file\(s\) known to git/i;
 
 /**
  * Thin: every method here runs against an already resolved, realpath'd repo

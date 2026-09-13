@@ -14,13 +14,28 @@ import { join } from 'path';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import {
+  createAheadBehindFixture,
   createMultiRepoWorkspace,
+  removeAheadBehindFixture,
   removeMultiRepoWorkspace,
+  type AheadBehindFixture,
   type MultiRepoWorkspace,
 } from '../src/git/__fixtures__/git-repo-fixture';
 import { GitRunner } from '../src/git/git-runner.service';
 
 const SEEDED_LOGIN = 'seeded-admin@example.com';
+
+/** Writes `content` to `relPath` inside `dir`, stages it, and commits. */
+function writeAndCommitViaCli(
+  dir: string,
+  relPath: string,
+  content: string,
+  message: string,
+): void {
+  writeFileSync(join(dir, relPath), content);
+  execFileSync('git', ['add', '--', relPath], { cwd: dir });
+  execFileSync('git', ['commit', '--quiet', '-m', message], { cwd: dir });
+}
 
 /**
  * Exercises the real app (guards, middleware, module wiring included) via
@@ -809,5 +824,365 @@ describe('Git (e2e)', () => {
       .toString()
       .trim();
     expect(loggedMessage).toBe(message);
+  });
+
+  // -------------------------------------------------------------------
+  // T12 — branch listing, checkout, create, delete
+  // -------------------------------------------------------------------
+
+  it('GET /api/git/branches with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/branches')
+      .query({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('GET /api/git/branches reports real ahead/behind, upstream, and filters origin/HEAD, through the full app', async () => {
+    // Reuses createAheadBehindFixture as-is (F74) rather than building
+    // another bare-repo-as-remote fixture. Its `dir`/`bareDir` live under
+    // their own mkdtemp parent rather than under the shared workspace root,
+    // so this test points a *separate* app instance's workspace root at
+    // that parent for the duration of the test, then restores the shared
+    // one for every other test in this file.
+    const fixture: AheadBehindFixture = createAheadBehindFixture();
+    const savedRoot = process.env.WEBUI_WORKSPACE_ROOT;
+    process.env.WEBUI_WORKSPACE_ROOT = fixture.parent;
+    let branchApp: INestApplication | undefined;
+    try {
+      execFileSync('git', ['remote', 'set-head', 'origin', '-a'], {
+        cwd: fixture.dir,
+      });
+      execFileSync('git', ['branch', 'topic'], { cwd: fixture.dir });
+
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      }).compile();
+      branchApp = moduleFixture.createNestApplication();
+      await branchApp.init();
+
+      const res = await request(branchApp.getHttpServer())
+        .get('/api/git/branches')
+        .query({ repo: 'local' })
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .expect(200);
+
+      const body = res.body as {
+        current: string | null;
+        detached: boolean;
+        local: Array<Record<string, unknown>>;
+        remote: Array<Record<string, unknown>>;
+      };
+      expect(body.current).toBe('main');
+      expect(body.detached).toBe(false);
+
+      const main = body.local.find((b) => b.name === 'main');
+      expect(main).toMatchObject({
+        upstream: 'origin/main',
+        ahead: 1,
+        behind: 1,
+        upstreamGone: false,
+      });
+      const topic = body.local.find((b) => b.name === 'topic');
+      expect(topic).toMatchObject({ upstream: null, ahead: 0, behind: 0 });
+
+      // origin/HEAD (short name "origin") must never appear; the real
+      // origin/main tracking branch must.
+      expect(body.remote.some((r) => r.name === 'origin')).toBe(false);
+      expect(body.remote.some((r) => r.name === 'origin/main')).toBe(true);
+    } finally {
+      if (branchApp) {
+        await branchApp.close();
+      }
+      if (savedRoot === undefined) {
+        delete process.env.WEBUI_WORKSPACE_ROOT;
+      } else {
+        process.env.WEBUI_WORKSPACE_ROOT = savedRoot;
+      }
+      removeAheadBehindFixture(fixture);
+    }
+  });
+
+  it('GET /api/git/branches on a detached HEAD reports current:null, detached:true, detachedAt set', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'one\n', 'first');
+    const firstSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'two\n', 'second');
+    execFileSync('git', ['checkout', '--quiet', '--detach', firstSha], {
+      cwd: workspace.plainRepo,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/api/git/branches')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    expect(res.body).toMatchObject({ current: null, detached: true });
+    const body = res.body as { detachedAt?: string };
+    expect(body.detachedAt).toBeDefined();
+    expect(firstSha.startsWith(body.detachedAt as string)).toBe(true);
+  });
+
+  it('POST /api/git/checkout with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/checkout')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', branch: 'main' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/checkout switches to an existing branch', async () => {
+    execFileSync('git', ['branch', 'other'], { cwd: workspace.plainRepo });
+
+    await request(app.getHttpServer())
+      .post('/api/git/checkout')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', branch: 'other' })
+      .expect(200);
+
+    const current = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(current).toBe('other');
+  });
+
+  it('POST /api/git/checkout create:true with a bare-SHA startPoint succeeds (proves checkRefFormat is not applied to startPoint)', async () => {
+    const firstSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'second\n', 'second');
+
+    await request(app.getHttpServer())
+      .post('/api/git/checkout')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({
+        repo: 'plain-repo',
+        branch: 'from-sha',
+        create: true,
+        startPoint: firstSha,
+      })
+      .expect(200);
+
+    const current = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    const currentSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(current).toBe('from-sha');
+    expect(currentSha).toBe(firstSha);
+  });
+
+  // The stronger, genuinely non-vacuous proof of the same distinction: a
+  // full 40-hex-char SHA happens to also satisfy `check-ref-format
+  // --branch`'s syntax rules, so it does not by itself distinguish
+  // "startPoint validated" from "startPoint unvalidated". `HEAD~1`
+  // (confirmed against real git 2.43: `check-ref-format --branch 'HEAD~1'`
+  // exits 128, since '~' is forbidden) does distinguish them, while still
+  // being an entirely ordinary "branch off one commit back" request.
+  it('POST /api/git/checkout create:true with startPoint "HEAD~1" succeeds (checkRefFormat would reject this valid commit-ish)', async () => {
+    const firstSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'second\n', 'second');
+
+    await request(app.getHttpServer())
+      .post('/api/git/checkout')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({
+        repo: 'plain-repo',
+        branch: 'from-head-tilde',
+        create: true,
+        startPoint: 'HEAD~1',
+      })
+      .expect(200);
+
+    const current = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    const currentSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(current).toBe('from-head-tilde');
+    expect(currentSha).toBe(firstSha);
+  });
+
+  it('POST /api/git/checkout with an invalid branch name -> 400 INVALID_REF', async () => {
+    for (const invalidName of ['..bad', '-flag']) {
+      const res = await request(app.getHttpServer())
+        .post('/api/git/checkout')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'plain-repo', branch: invalidName })
+        .expect(400);
+      expect(res.body).toMatchObject({ code: 'INVALID_REF' });
+    }
+  });
+
+  it('POST /api/git/branch with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', name: 'feature' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/branch creates a branch without switching to it', async () => {
+    await request(app.getHttpServer())
+      .post('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: 'feature' })
+      .expect(200);
+
+    const current = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(current).toBe('main');
+    const branches = execFileSync('git', ['branch', '--list'], {
+      cwd: workspace.plainRepo,
+    }).toString();
+    expect(branches).toContain('feature');
+  });
+
+  it('POST /api/git/branch with an invalid name -> 400 INVALID_REF', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: '..bad' })
+      .expect(400);
+    expect(res.body).toMatchObject({ code: 'INVALID_REF' });
+  });
+
+  it('POST /api/git/branch colliding with an existing name -> 409 BRANCH_EXISTS', async () => {
+    execFileSync('git', ['branch', 'dup'], { cwd: workspace.plainRepo });
+
+    const res = await request(app.getHttpServer())
+      .post('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: 'dup' })
+      .expect(409);
+    expect(res.body).toMatchObject({ code: 'BRANCH_EXISTS' });
+  });
+
+  it('DELETE /api/git/branch with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .delete('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', name: 'feature' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('DELETE /api/git/branch removes a merged branch', async () => {
+    execFileSync('git', ['branch', 'gone-soon'], { cwd: workspace.plainRepo });
+
+    await request(app.getHttpServer())
+      .delete('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: 'gone-soon' })
+      .expect(200);
+
+    const branches = execFileSync('git', ['branch', '--list'], {
+      cwd: workspace.plainRepo,
+    }).toString();
+    expect(branches).not.toContain('gone-soon');
+  });
+
+  it('DELETE /api/git/branch with an invalid name -> 400 INVALID_REF', async () => {
+    const res = await request(app.getHttpServer())
+      .delete('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: '-flag' })
+      .expect(400);
+    expect(res.body).toMatchObject({ code: 'INVALID_REF' });
+  });
+
+  it('DELETE /api/git/branch for an unknown name -> 404 BRANCH_NOT_FOUND', async () => {
+    const res = await request(app.getHttpServer())
+      .delete('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: 'never-existed' })
+      .expect(404);
+    expect(res.body).toMatchObject({ code: 'BRANCH_NOT_FOUND' });
+  });
+
+  it('DELETE /api/git/branch without force on an unmerged branch -> 422 GIT_COMMAND_FAILED with "not fully merged" in detail.stderr', async () => {
+    execFileSync('git', ['checkout', '--quiet', '-b', 'unmerged'], {
+      cwd: workspace.plainRepo,
+    });
+    writeAndCommitViaCli(
+      workspace.plainRepo,
+      'unmerged.txt',
+      'x\n',
+      'unmerged commit',
+    );
+    execFileSync('git', ['checkout', '--quiet', 'main'], {
+      cwd: workspace.plainRepo,
+    });
+
+    const res = await request(app.getHttpServer())
+      .delete('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: 'unmerged' })
+      .expect(422);
+    expect(res.body).toMatchObject({ code: 'GIT_COMMAND_FAILED' });
+    const body = res.body as { detail: { stderr: string } };
+    expect(body.detail.stderr).toContain('not fully merged');
+
+    // force:true actually removes it.
+    await request(app.getHttpServer())
+      .delete('/api/git/branch')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', name: 'unmerged', force: true })
+      .expect(200);
+    const branches = execFileSync('git', ['branch', '--list'], {
+      cwd: workspace.plainRepo,
+    }).toString();
+    expect(branches).not.toContain('unmerged');
   });
 });
