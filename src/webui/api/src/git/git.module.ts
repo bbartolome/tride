@@ -1,11 +1,15 @@
 import { Module } from '@nestjs/common';
+import { WorkspaceModule } from '../workspace/workspace.module';
+import { GitController } from './git.controller';
+import { GitRepoService } from './git-repo.service';
 import { GitRunner } from './git-runner.service';
 
-// No controller yet — the git HTTP surface arrives in T8+. This module
-// exists so GitRunner can be depended on by name from other modules ahead
-// of that.
+// GitRepoService depends on WorkspacePathService (repo-root containment and
+// `path` <-> relative-path conversion), hence the WorkspaceModule import.
 @Module({
-  providers: [GitRunner],
-  exports: [GitRunner],
+  imports: [WorkspaceModule],
+  controllers: [GitController],
+  providers: [GitRunner, GitRepoService],
+  exports: [GitRunner, GitRepoService],
 })
 export class GitModule {}

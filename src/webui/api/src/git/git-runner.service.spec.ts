@@ -115,6 +115,24 @@ describe('GitRunner', () => {
       ).rejects.toThrow(/banned/);
     });
 
+    // The ban is positional, not lexical: only the leading option run, before
+    // the subcommand, can redirect git away from cwd. `git rev-parse
+    // --git-dir` merely prints a path and repo discovery depends on it.
+    // Banning the token everywhere pushed discovery into spawning git itself,
+    // outside this class's mutex and timeout - a worse outcome. Do not
+    // re-broaden this to scan all of argv.
+    it('permits --git-dir as a rev-parse query flag after the subcommand', async () => {
+      const result = await runner.run(repo, [
+        'rev-parse',
+        '--show-toplevel',
+        '--git-dir',
+        '--git-common-dir',
+        '--absolute-git-dir',
+      ]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim().split('\n')).toHaveLength(4);
+    });
+
     it('resolves instead of throwing when allowFailure is set on a failing command', async () => {
       const result = await runner.run(repo, ['show', 'nonexistent-ref'], {
         allowFailure: true,

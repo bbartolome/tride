@@ -1,10 +1,9 @@
 import { Module } from '@nestjs/common';
+import { WorkspaceController } from './workspace.controller';
 import { WorkspacePathService } from './workspace-path.service';
 
-// No controller yet — the filesystem/git HTTP surface arrives in T8. This
-// module exists so WorkspacePathService can be depended on by name from
-// other modules ahead of that.
 @Module({
+  controllers: [WorkspaceController],
   providers: [WorkspacePathService],
   exports: [WorkspacePathService],
 })

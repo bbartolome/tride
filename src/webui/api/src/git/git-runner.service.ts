@@ -121,7 +121,17 @@ export class GitRunner {
     args: string[],
     opts: GitRunOptions = {},
   ): Promise<GitRunResult> {
+    // Only the leading option run — everything before the subcommand — can
+    // redirect git away from `cwd`. `git --git-dir=/foo status` is a
+    // redirect; `git rev-parse --git-dir` is a query flag that merely prints
+    // the path, and repo discovery legitimately needs it. Scanning all of
+    // argv would ban the harmless form too and push callers into spawning
+    // git themselves, outside this mutex and timeout — a worse outcome than
+    // the narrower check.
     for (const arg of args) {
+      if (!arg.startsWith('-')) {
+        break; // subcommand reached; later flags belong to it, not to git
+      }
       if (
         BANNED_EXACT_ARGS.has(arg) ||
         BANNED_ARG_PREFIXES.some((prefix) => arg.startsWith(prefix))
