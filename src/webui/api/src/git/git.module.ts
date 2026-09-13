@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { WorkspaceModule } from '../workspace/workspace.module';
 import { GitController } from './git.controller';
+import { GitDiffService } from './git-diff.service';
+import { GitLogService } from './git-log.service';
 import { GitRepoService } from './git-repo.service';
 import { GitRunner } from './git-runner.service';
 import { GitStatusService } from './git-status.service';
@@ -10,7 +12,19 @@ import { GitStatusService } from './git-status.service';
 @Module({
   imports: [WorkspaceModule],
   controllers: [GitController],
-  providers: [GitRunner, GitRepoService, GitStatusService],
-  exports: [GitRunner, GitRepoService, GitStatusService],
+  providers: [
+    GitRunner,
+    GitRepoService,
+    GitStatusService,
+    GitDiffService,
+    GitLogService,
+  ],
+  exports: [
+    GitRunner,
+    GitRepoService,
+    GitStatusService,
+    GitDiffService,
+    GitLogService,
+  ],
 })
 export class GitModule {}

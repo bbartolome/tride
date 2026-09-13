@@ -206,4 +206,251 @@ describe('Git (e2e)', () => {
       expect.objectContaining({ kind: 'ordinary', path: 'second.txt' }),
     );
   });
+
+  it('GET /api/git/diff with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/diff')
+      .query({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('GET /api/git/diff reports different output for staged vs unstaged changes to the same file', async () => {
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'one\ntwo\nthree\n');
+    execFileSync('git', ['add', '--', 'a.txt'], { cwd: workspace.plainRepo });
+    execFileSync('git', ['commit', '--quiet', '-m', 'add a.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    writeFileSync(
+      join(workspace.plainRepo, 'a.txt'),
+      'one\nTWO-STAGED\nthree\n',
+    );
+    execFileSync('git', ['add', '--', 'a.txt'], { cwd: workspace.plainRepo });
+    writeFileSync(
+      join(workspace.plainRepo, 'a.txt'),
+      'one\nTWO-STAGED\nthree\nFOUR-UNSTAGED\n',
+    );
+
+    const staged = await request(app.getHttpServer())
+      .get('/api/git/diff')
+      .query({ repo: 'plain-repo', path: 'a.txt', staged: '1' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    const unstaged = await request(app.getHttpServer())
+      .get('/api/git/diff')
+      .query({ repo: 'plain-repo', path: 'a.txt' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    expect((staged.body as { text: string }).text).toContain('+TWO-STAGED');
+    expect((unstaged.body as { text: string }).text).toContain(
+      '+FOUR-UNSTAGED',
+    );
+  });
+
+  it('GET /api/git/diff detects a binary file and returns {binary:true}', async () => {
+    writeFileSync(
+      join(workspace.plainRepo, 'bin.dat'),
+      Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe]),
+    );
+    execFileSync('git', ['add', '--', 'bin.dat'], {
+      cwd: workspace.plainRepo,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/api/git/diff')
+      .query({ repo: 'plain-repo', path: 'bin.dat', staged: '1' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    expect(res.body).toEqual({ binary: true });
+  });
+
+  it('GET /api/git/diff/summary with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/diff/summary')
+      .query({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('GET /api/git/diff/summary reports a binary file, a colliding rename, and an ordinary change with the record after the rename intact', async () => {
+    writeFileSync(join(workspace.plainRepo, 'old.txt'), 'line one\nline two\n');
+    writeFileSync(join(workspace.plainRepo, 'third.txt'), 'third content\n');
+    writeFileSync(join(workspace.plainRepo, 'bin.dat'), 'placeholder\n');
+    execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+    execFileSync('git', ['commit', '--quiet', '-m', 'seed files'], {
+      cwd: workspace.plainRepo,
+    });
+
+    // Engineered collision (F71 applied to numstat, per F70): the renamed
+    // file's NEW path is itself shaped exactly like a valid numstat record,
+    // so an under-consuming cursor would produce a convincing phantom entry
+    // rather than obvious garbage.
+    execFileSync('git', ['mv', 'old.txt', '1\t1\tdecoy.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    writeFileSync(
+      join(workspace.plainRepo, 'third.txt'),
+      'third content\nmodified\n',
+    );
+    writeFileSync(
+      join(workspace.plainRepo, 'bin.dat'),
+      Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x42, 0x49, 0x4e]),
+    );
+    execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+
+    const res = await request(app.getHttpServer())
+      .get('/api/git/diff/summary')
+      .query({ repo: 'plain-repo', staged: '1' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    const summary = res.body as Array<Record<string, unknown>>;
+    expect(summary).toHaveLength(3);
+    expect(summary[0]).toMatchObject({
+      path: '1\t1\tdecoy.txt',
+      origPath: 'old.txt',
+    });
+    // The record positioned right after the rename — exactly the position
+    // a desynced cursor would corrupt into a phantom "decoy.txt" entry —
+    // must be the real binary entry.
+    expect(summary[1]).toMatchObject({ path: 'bin.dat', binary: true });
+    expect(summary).toContainEqual(
+      expect.objectContaining({ path: 'third.txt', added: 1, deleted: 0 }),
+    );
+  });
+
+  it('GET /api/git/show with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/show')
+      .query({ repo: 'plain-repo', rev: 'HEAD' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('GET /api/git/show returns the header and diff of a commit, restrictable by path, and accepts a bare SHA', async () => {
+    writeFileSync(join(workspace.plainRepo, 'x.txt'), 'one\n');
+    writeFileSync(join(workspace.plainRepo, 'y.txt'), 'one\n');
+    execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+    execFileSync('git', ['commit', '--quiet', '-m', 'seed x and y'], {
+      cwd: workspace.plainRepo,
+    });
+    writeFileSync(join(workspace.plainRepo, 'x.txt'), 'one\ntwo\n');
+    writeFileSync(join(workspace.plainRepo, 'y.txt'), 'one\ntwo\n');
+    execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+    execFileSync('git', ['commit', '--quiet', '-m', 'touch x and y'], {
+      cwd: workspace.plainRepo,
+    });
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+
+    // Bare SHA, no path filter, proves checkRefFormat is not applied (F59).
+    const full = await request(app.getHttpServer())
+      .get('/api/git/show')
+      .query({ repo: 'plain-repo', rev: sha })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    expect(full.body).toMatchObject({
+      header: { sha, message: 'touch x and y' },
+    });
+    expect((full.body as { diffText: string }).diffText).toContain('a/x.txt');
+    expect((full.body as { diffText: string }).diffText).toContain('a/y.txt');
+
+    const scoped = await request(app.getHttpServer())
+      .get('/api/git/show')
+      .query({ repo: 'plain-repo', rev: sha, path: 'x.txt' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    expect((scoped.body as { diffText: string }).diffText).toContain('a/x.txt');
+    expect((scoped.body as { diffText: string }).diffText).not.toContain(
+      'a/y.txt',
+    );
+  });
+
+  it('GET /api/git/show with no rev param -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/show')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(400);
+    expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  it('GET /api/git/log with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/log')
+      .query({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('GET /api/git/log paginates with limit/skip and scopes to a path, and survives a delimiter-laden commit message', async () => {
+    const shas: string[] = [];
+    const commit = (relPath: string, content: string, message: string) => {
+      writeFileSync(join(workspace.plainRepo, relPath), content);
+      execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+      execFileSync('git', ['commit', '--quiet', '-m', message], {
+        cwd: workspace.plainRepo,
+      });
+      shas.push(
+        execFileSync('git', ['rev-parse', 'HEAD'], {
+          cwd: workspace.plainRepo,
+        })
+          .toString()
+          .trim(),
+      );
+    };
+
+    commit('a.txt', '1\n', 'commit 1');
+    commit('scoped.txt', 'v1\n', 'commit 2 touches scoped.txt');
+    commit('b.txt', '1\n', 'commit 3');
+    const trickyMessage =
+      'Weird subject\n\nLine with \x1f US and \x1e RS embedded\nlast line';
+    commit('scoped.txt', 'v2\n', trickyMessage);
+    commit('c.txt', '1\n', 'commit 5');
+
+    const page = await request(app.getHttpServer())
+      .get('/api/git/log')
+      .query({ repo: 'plain-repo', limit: 2, skip: 0 })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    const pageEntries = page.body as Array<Record<string, unknown>>;
+    expect(pageEntries.map((e) => e.sha)).toEqual([shas[4], shas[3]]);
+    // The delimiter-laden message survives the fixed-format parse intact.
+    expect(pageEntries[1].message).toBe(trickyMessage);
+
+    const nextPage = await request(app.getHttpServer())
+      .get('/api/git/log')
+      .query({ repo: 'plain-repo', limit: 2, skip: 2 })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    expect(
+      (nextPage.body as Array<Record<string, unknown>>).map((e) => e.sha),
+    ).toEqual([shas[2], shas[1]]);
+
+    const scoped = await request(app.getHttpServer())
+      .get('/api/git/log')
+      .query({ repo: 'plain-repo', path: 'scoped.txt' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    expect(
+      (scoped.body as Array<Record<string, unknown>>).map((e) => e.sha),
+    ).toEqual([shas[3], shas[1]]);
+  });
 });

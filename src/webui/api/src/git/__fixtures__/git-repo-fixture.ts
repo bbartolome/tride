@@ -389,3 +389,68 @@ export function createAheadBehindFixture(): AheadBehindFixture {
 export function removeAheadBehindFixture(fixture: AheadBehindFixture): void {
   rmSync(fixture.parent, { recursive: true, force: true });
 }
+
+// ---------------------------------------------------------------------------
+// T10 fixtures — `git diff --numstat -z` and `git show`/`git log` edge cases
+// ---------------------------------------------------------------------------
+
+export interface DiffSummaryFixture {
+  dir: string;
+}
+
+/**
+ * Three simultaneously staged changes exercising every branch of
+ * `git diff --numstat -z` parsing at once: a binary file (real non-UTF8
+ * bytes), a pure rename whose NEW path is deliberately engineered to be
+ * `"1\t1\tdecoy.txt"` — a real filename containing literal TAB bytes that
+ * happens to look EXACTLY like a valid, unrelated numstat record — and an
+ * ordinary modified text file. Confirmed against real git 2.43 that these
+ * are emitted in this exact order (rename, then binary, then ordinary).
+ *
+ * The engineered name matters (F71's lesson applied to this shape): a
+ * parser that only consumes ONE of the rename's two extra NUL-terminated
+ * fields (easy to do by copy-pasting `git-status-parser.ts`'s single-field
+ * rename handling) leaves this name to be misread as its own convincing —
+ * not obviously broken — phantom entry on the next loop iteration, shifting
+ * every real record after it by one position.
+ */
+export function createDiffSummaryFixture(): DiffSummaryFixture {
+  const dir = createTempRepo('git-diff-summary-');
+  writeAndCommit(dir, 'old.txt', 'line one\nline two\n', 'add old.txt');
+  writeAndCommit(dir, 'third.txt', 'third content\n', 'add third.txt');
+  writeAndCommit(dir, 'bin.dat', 'placeholder\n', 'add bin.dat');
+
+  execFileSync('git', ['mv', 'old.txt', '1\t1\tdecoy.txt'], { cwd: dir });
+  writeFileSync(join(dir, 'third.txt'), 'third content\nmodified\n');
+  writeFileSync(
+    join(dir, 'bin.dat'),
+    Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x42, 0x49, 0x4e]),
+  );
+  execFileSync('git', ['add', '-A'], { cwd: dir });
+
+  return { dir };
+}
+
+export interface MultiCommitHistoryFixture {
+  dir: string;
+  /** SHAs oldest to newest, one per commit (5 total). */
+  shas: string[];
+}
+
+/**
+ * Five commits, oldest to newest, for `git log` pagination
+ * (`limit`/`skip`) tests. Commits 2 and 4 (indices 1 and 3) touch
+ * `scoped.txt` — every other commit touches an unrelated file — so a
+ * `path`-scoped log can be asserted to return exactly those two.
+ */
+export function createMultiCommitHistoryFixture(): MultiCommitHistoryFixture {
+  const dir = createTempRepo('git-log-history-');
+  const shas = [
+    writeAndCommit(dir, 'a.txt', '1\n', 'commit 1'),
+    writeAndCommit(dir, 'scoped.txt', 'v1\n', 'commit 2 touches scoped.txt'),
+    writeAndCommit(dir, 'b.txt', '1\n', 'commit 3'),
+    writeAndCommit(dir, 'scoped.txt', 'v2\n', 'commit 4 touches scoped.txt'),
+    writeAndCommit(dir, 'c.txt', '1\n', 'commit 5'),
+  ];
+  return { dir, shas };
+}
