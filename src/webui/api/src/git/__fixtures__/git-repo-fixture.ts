@@ -204,3 +204,188 @@ export function createMultiRepoWorkspace(
 export function removeMultiRepoWorkspace(root: string): void {
   rmSync(root, { recursive: true, force: true });
 }
+
+// ---------------------------------------------------------------------------
+// T9 fixtures — `git status --porcelain=v2 -z` edge cases
+// ---------------------------------------------------------------------------
+
+export interface RenameStatusFixture {
+  dir: string;
+}
+
+/**
+ * A repo with a STAGED rename (`old.txt` -> `new.txt`, no content change, so
+ * git reports it as a pure rename with a `R100` score) plus a second,
+ * unrelated file modified but left unstaged. `second.txt` sorts after
+ * `new.txt`, so its ordinary-change record follows the rename record in
+ * real git's output — exactly the case that catches a desynchronized
+ * cursor (a naive parse would misread `second.txt`'s record as the
+ * rename's `origPath`).
+ */
+export function createRenameStatusFixture(): RenameStatusFixture {
+  const dir = createTempRepo('git-status-rename-');
+  writeAndCommit(
+    dir,
+    'old.txt',
+    'line one\nline two\nline three\n',
+    'add old.txt',
+  );
+  writeAndCommit(dir, 'second.txt', 'unchanged\n', 'add second.txt');
+  execFileSync('git', ['mv', 'old.txt', 'new.txt'], { cwd: dir });
+  writeFileSync(join(dir, 'second.txt'), 'unchanged\nmodified\n');
+  return { dir };
+}
+
+export interface MergeConflictFixture {
+  dir: string;
+}
+
+/**
+ * A real, unresolved merge conflict: a base commit on `main`, a `feature`
+ * branch that edits one line, `main` editing the same line differently,
+ * then `git merge feature` — which fails and leaves genuine conflict
+ * markers plus `MERGE_HEAD` in place. Built with raw `execFileSync`
+ * throughout (merge is not, and will never be, an app-exposed operation,
+ * so it must never go through `GitRunner`).
+ */
+export function createMergeConflictFixture(): MergeConflictFixture {
+  const dir = createTempRepo('git-status-conflict-');
+  writeAndCommit(dir, 'conflict.txt', 'base\n', 'base commit');
+
+  execFileSync('git', ['checkout', '--quiet', '-b', 'feature'], { cwd: dir });
+  writeFileSync(join(dir, 'conflict.txt'), 'feature change\n');
+  execFileSync('git', ['add', '--', 'conflict.txt'], { cwd: dir });
+  execFileSync('git', ['commit', '--quiet', '-m', 'feature change'], {
+    cwd: dir,
+  });
+
+  execFileSync('git', ['checkout', '--quiet', 'main'], { cwd: dir });
+  writeFileSync(join(dir, 'conflict.txt'), 'main change\n');
+  execFileSync('git', ['add', '--', 'conflict.txt'], { cwd: dir });
+  execFileSync('git', ['commit', '--quiet', '-m', 'main change'], {
+    cwd: dir,
+  });
+
+  try {
+    // Expected to fail (nonzero exit) — that failure IS the conflict.
+    execFileSync('git', ['merge', '--quiet', '--no-edit', 'feature'], {
+      cwd: dir,
+      stdio: 'ignore',
+    });
+  } catch {
+    // intentional
+  }
+
+  return { dir };
+}
+
+export interface UntrackedDirFixture {
+  dir: string;
+}
+
+/**
+ * A never-`git add`ed subdirectory containing a file. Git reports the
+ * directory itself as a single `?` untracked record (with a trailing `/`),
+ * not its contents individually.
+ */
+export function createUntrackedDirectoryFixture(): UntrackedDirFixture {
+  const dir = createTempRepo('git-status-untracked-dir-');
+  writeAndCommit(dir, 'tracked.txt', 'tracked\n', 'initial');
+  const subdir = join(dir, 'newdir');
+  mkdirSync(subdir);
+  writeFileSync(join(subdir, 'inner.txt'), 'inner\n');
+  return { dir };
+}
+
+export interface DetachedHeadFixture {
+  dir: string;
+  /** SHA of the first commit — the one HEAD is detached onto. */
+  firstSha: string;
+}
+
+/**
+ * Two commits, with HEAD detached onto the first via `--detach` (explicit,
+ * to avoid the ordinary-checkout-of-a-branch-name ambiguity warning).
+ */
+export function createDetachedHeadFixture(): DetachedHeadFixture {
+  const dir = createTempRepo('git-status-detached-');
+  const firstSha = writeAndCommit(dir, 'a.txt', 'one\n', 'first');
+  writeAndCommit(dir, 'a.txt', 'two\n', 'second');
+  execFileSync('git', ['checkout', '--quiet', '--detach', firstSha], {
+    cwd: dir,
+  });
+  return { dir, firstSha };
+}
+
+export interface AheadBehindFixture {
+  /** mkdtemp parent — a single `rmSync` on this cleans up everything. */
+  parent: string;
+  /** The local repo under test: `main` tracks `origin/main`. */
+  dir: string;
+  bareDir: string;
+}
+
+/**
+ * Bare-repo-as-remote pattern (F50): a local repo pushes an initial commit
+ * to a bare "remote", a second clone pushes a *different* commit to that
+ * same bare repo (simulating someone else's push), and the local repo then
+ * makes its own divergent commit and fetches (without merging). The result
+ * is a local `main` that is both ahead (its own new commit) and behind
+ * (the other clone's commit, now sitting on `origin/main`) — both nonzero,
+ * with no network involved.
+ */
+export function createAheadBehindFixture(): AheadBehindFixture {
+  const parent = mkdtempSync(join(tmpdir(), 'git-status-ahead-behind-'));
+
+  const bareDir = join(parent, 'remote.git');
+  mkdirSync(bareDir);
+  execFileSync('git', ['init', '--quiet', '--bare', '--initial-branch=main'], {
+    cwd: bareDir,
+  });
+
+  const dir = join(parent, 'local');
+  mkdirSync(dir);
+  initLocalRepo(dir);
+  writeAndCommit(dir, 'file.txt', 'one\n', 'initial commit');
+  execFileSync('git', ['remote', 'add', 'origin', bareDir], { cwd: dir });
+  execFileSync('git', ['push', '--quiet', 'origin', 'main'], { cwd: dir });
+  execFileSync(
+    'git',
+    ['branch', '--quiet', '--set-upstream-to=origin/main', 'main'],
+    { cwd: dir },
+  );
+
+  const otherClone = join(parent, 'other-clone');
+  execFileSync('git', ['clone', '--quiet', bareDir, otherClone]);
+  execFileSync('git', ['config', 'user.name', 'Fixture User'], {
+    cwd: otherClone,
+  });
+  execFileSync('git', ['config', 'user.email', 'fixture@example.com'], {
+    cwd: otherClone,
+  });
+  execFileSync('git', ['config', 'commit.gpgsign', 'false'], {
+    cwd: otherClone,
+  });
+  writeAndCommit(
+    otherClone,
+    'remote-file.txt',
+    'remote change\n',
+    'remote commit',
+  );
+  execFileSync('git', ['push', '--quiet', 'origin', 'main'], {
+    cwd: otherClone,
+  });
+
+  // Local's own divergent commit, then fetch (never merge) so the
+  // `origin/main` tracking ref updates without touching local history —
+  // this is what makes both `ahead` and `behind` nonzero simultaneously.
+  writeAndCommit(dir, 'local-file.txt', 'local change\n', 'local commit');
+  execFileSync('git', ['fetch', '--quiet', 'origin'], { cwd: dir });
+
+  return { parent, dir, bareDir };
+}
+
+/** Removes a fixture created by `createAheadBehindFixture`. */
+export function removeAheadBehindFixture(fixture: AheadBehindFixture): void {
+  rmSync(fixture.parent, { recursive: true, force: true });
+}

@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { mkdtempSync, rmSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import request from 'supertest';
@@ -116,5 +117,93 @@ describe('Git (e2e)', () => {
 
     expect(Array.isArray(res.body)).toBe(true);
     expect((res.body as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it('GET /api/git/status with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/status')
+      .query({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('GET /api/git/status?repo=plain-repo returns a clean status with no entries', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/status')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    expect(res.body).toMatchObject({
+      branch: 'main',
+      detached: false,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      entries: [],
+    });
+  });
+
+  it('GET /api/git/status with no repo param -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/status')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(400);
+    expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  it('GET /api/git/status?repo=does-not-exist -> 404 REPO_NOT_FOUND', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/status')
+      .query({ repo: 'does-not-exist' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(404);
+    expect(res.body).toMatchObject({ code: 'REPO_NOT_FOUND' });
+  });
+
+  it('GET /api/git/status?repo=plain-repo reports a staged rename, through the full app, without desync', async () => {
+    writeFileSync(join(workspace.plainRepo, 'old.txt'), 'one\ntwo\n');
+    execFileSync('git', ['add', '--', 'old.txt'], { cwd: workspace.plainRepo });
+    execFileSync('git', ['commit', '--quiet', '-m', 'add old.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    writeFileSync(join(workspace.plainRepo, 'second.txt'), 'unchanged\n');
+    execFileSync('git', ['add', '--', 'second.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    execFileSync('git', ['commit', '--quiet', '-m', 'add second.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    execFileSync('git', ['mv', 'old.txt', 'new.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    writeFileSync(
+      join(workspace.plainRepo, 'second.txt'),
+      'unchanged\nmodified\n',
+    );
+
+    const res = await request(app.getHttpServer())
+      .get('/api/git/status')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    const body = res.body as { entries: Array<Record<string, unknown>> };
+    const entries = body.entries;
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        kind: 'renamed',
+        path: 'new.txt',
+        origPath: 'old.txt',
+      }),
+    );
+    // The record after the rename must be intact, not consumed as the
+    // rename's origPath field.
+    expect(entries).toContainEqual(
+      expect.objectContaining({ kind: 'ordinary', path: 'second.txt' }),
+    );
   });
 });
