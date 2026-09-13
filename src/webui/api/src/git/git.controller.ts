@@ -39,6 +39,11 @@ import { GitRepoService, RepoSummary } from './git-repo.service';
 import { toHttpException } from './git-runner.service';
 import { parseBoolFlag, parseIntParam } from './git-query.util';
 import { resolveSshAuthSock } from './ssh-auth-sock.util';
+import {
+  GitStashService,
+  StashEntry,
+  StashPushOptions,
+} from './git-stash.service';
 import { GitStatusResult, GitStatusService } from './git-status.service';
 
 function validationError(message: string): BadRequestException {
@@ -233,6 +238,17 @@ function parsePushBody(record: Record<string, unknown>): PushOptions {
   };
 }
 
+function parseStashPushBody(record: Record<string, unknown>): StashPushOptions {
+  return {
+    message: parseOptionalString(record, 'message'),
+    includeUntracked: record.includeUntracked === true,
+  };
+}
+
+function requireStashRefBody(record: Record<string, unknown>): string {
+  return requireNonEmptyString(record.ref, 'ref');
+}
+
 const DEFAULT_DIFF_CONTEXT = 3;
 const MAX_DIFF_CONTEXT = 100;
 const DEFAULT_LOG_LIMIT = 50;
@@ -249,6 +265,7 @@ export class GitController {
     private readonly gitChangesService: GitChangesService,
     private readonly gitBranchService: GitBranchService,
     private readonly gitRemoteService: GitRemoteService,
+    private readonly gitStashService: GitStashService,
   ) {}
 
   @Get('repos')
@@ -539,6 +556,84 @@ export class GitController {
     const opts = parsePushBody(record);
     try {
       await this.gitRemoteService.push(repoRoot, opts, resolveSshAuthSock());
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Get('git/stash')
+  async stashList(@Query('repo') repo?: string): Promise<StashEntry[]> {
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(repo),
+    );
+    try {
+      return await this.gitStashService.list(repoRoot);
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/stash')
+  @HttpCode(200)
+  async stashPush(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parseStashPushBody(record);
+    try {
+      await this.gitStashService.push(repoRoot, opts);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/stash/apply')
+  @HttpCode(200)
+  async stashApply(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    // Validated (whitelist against `stash@{N}`), and rejected, before any
+    // git call — see `GitStashService.validateStashRef`.
+    const ref = requireStashRefBody(record);
+    try {
+      await this.gitStashService.apply(repoRoot, ref);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/stash/pop')
+  @HttpCode(200)
+  async stashPop(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const ref = requireStashRefBody(record);
+    try {
+      await this.gitStashService.pop(repoRoot, ref);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/stash/drop')
+  @HttpCode(200)
+  async stashDrop(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const ref = requireStashRefBody(record);
+    try {
+      await this.gitStashService.drop(repoRoot, ref);
       return { ok: true };
     } catch (err) {
       throw toHttpException(err);

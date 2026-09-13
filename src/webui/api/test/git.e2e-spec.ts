@@ -1462,4 +1462,303 @@ describe('Git (e2e)', () => {
       rmSync(parent, { recursive: true, force: true });
     }
   });
+
+  // -------------------------------------------------------------------
+  // T14 — stash list / push / apply / pop / drop
+  // -------------------------------------------------------------------
+
+  it('GET /api/git/stash with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/git/stash')
+      .query({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/stash with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/stash/apply with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/stash/apply')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', ref: 'stash@{0}' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/stash reverts a modified tracked file to a clean HEAD, verified by `git status --porcelain`', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'original\n', 'initial');
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'modified\n');
+
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message: 'wip' })
+      .expect(200);
+
+    const status = execFileSync('git', ['status', '--porcelain'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(status).toBe('');
+    expect(readFileSync(join(workspace.plainRepo, 'a.txt'), 'utf8')).toBe(
+      'original\n',
+    );
+  });
+
+  it('GET /api/git/stash lists one entry with correct ref/sha/date/message', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'original\n', 'initial');
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'modified\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message: 'my stash message' })
+      .expect(200);
+    const expectedSha = execFileSync('git', ['rev-parse', 'refs/stash'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+
+    const res = await request(app.getHttpServer())
+      .get('/api/git/stash')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    const list = res.body as Array<Record<string, unknown>>;
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({
+      ref: 'stash@{0}',
+      sha: expectedSha,
+    });
+    expect(list[0].message).toContain('my stash message');
+  });
+
+  it('GET /api/git/stash positionally parses a message containing \\x1f and one containing a newline, without desync', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'one\n', 'initial');
+
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'two\n');
+    const trickyMessage = 'has\x1fembedded\x1funit separators';
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message: trickyMessage })
+      .expect(200);
+
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'three\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({
+        repo: 'plain-repo',
+        message: 'multi\nline stash message',
+      })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/git/stash')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    const list = res.body as Array<Record<string, unknown>>;
+    expect(list).toHaveLength(2);
+    expect(list[0].ref).toBe('stash@{0}');
+    expect(list[0].message).toBe('On main: multi line stash message');
+    expect(list[1].ref).toBe('stash@{1}');
+    expect(list[1].message).toBe(`On main: ${trickyMessage}`);
+  });
+
+  it('POST /api/git/stash/pop restores the exact modification and removes the stash entry', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'original\n', 'initial');
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'modified\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/git/stash/pop')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', ref: 'stash@{0}' })
+      .expect(200);
+
+    expect(readFileSync(join(workspace.plainRepo, 'a.txt'), 'utf8')).toBe(
+      'modified\n',
+    );
+    const list = await request(app.getHttpServer())
+      .get('/api/git/stash')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    expect(list.body).toEqual([]);
+  });
+
+  it('POST /api/git/stash with includeUntracked also stashes an untracked file, and pop restores it', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'original\n', 'initial');
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'modified\n');
+    const untrackedPath = join(workspace.plainRepo, 'untracked.txt');
+    writeFileSync(untrackedPath, 'junk\n');
+
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', includeUntracked: true })
+      .expect(200);
+
+    expect(existsSync(untrackedPath)).toBe(false);
+    const cleanStatus = execFileSync('git', ['status', '--porcelain'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(cleanStatus).toBe('');
+
+    await request(app.getHttpServer())
+      .post('/api/git/stash/pop')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', ref: 'stash@{0}' })
+      .expect(200);
+
+    expect(readFileSync(join(workspace.plainRepo, 'a.txt'), 'utf8')).toBe(
+      'modified\n',
+    );
+    expect(existsSync(untrackedPath)).toBe(true);
+    expect(readFileSync(untrackedPath, 'utf8')).toBe('junk\n');
+  });
+
+  it('POST /api/git/stash/apply leaves the entry in place (list still shows it), vs pop which removes it', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'original\n', 'initial');
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'modified\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/git/stash/apply')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', ref: 'stash@{0}' })
+      .expect(200);
+
+    expect(readFileSync(join(workspace.plainRepo, 'a.txt'), 'utf8')).toBe(
+      'modified\n',
+    );
+    const afterApply = await request(app.getHttpServer())
+      .get('/api/git/stash')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    // apply must NOT remove the entry.
+    expect(afterApply.body).toHaveLength(1);
+  });
+
+  it('POST /api/git/stash/drop removes an entry without applying it', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'original\n', 'initial');
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'modified\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/git/stash/drop')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', ref: 'stash@{0}' })
+      .expect(200);
+
+    const list = await request(app.getHttpServer())
+      .get('/api/git/stash')
+      .query({ repo: 'plain-repo' })
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+    expect(list.body).toEqual([]);
+    // drop must never reapply — the working tree stays exactly as it was
+    // left after the push (clean, at HEAD's content).
+    const cleanStatus = execFileSync('git', ['status', '--porcelain'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(cleanStatus).toBe('');
+    expect(readFileSync(join(workspace.plainRepo, 'a.txt'), 'utf8')).toBe(
+      'original\n',
+    );
+  });
+
+  it('POST /api/git/stash/apply against stash@{5} on a short list -> 404 STASH_NOT_FOUND', async () => {
+    writeAndCommitViaCli(workspace.plainRepo, 'a.txt', 'original\n', 'initial');
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'modified\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stash')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo' })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .post('/api/git/stash/apply')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', ref: 'stash@{5}' })
+      .expect(404);
+    expect(res.body).toMatchObject({ code: 'STASH_NOT_FOUND' });
+  });
+
+  it('POST /api/git/stash/{apply,pop,drop} with a malformed ref -> 400 VALIDATION_ERROR before any git call', async () => {
+    const runSpy = jest.spyOn(GitRunner.prototype, 'run');
+    try {
+      for (const endpoint of ['apply', 'pop', 'drop']) {
+        for (const malformed of [
+          'not-a-ref',
+          'stash@{-1}',
+          'stash@{0};rm -rf /',
+        ]) {
+          const res = await request(app.getHttpServer())
+            .post(`/api/git/stash/${endpoint}`)
+            .set('X-Webui-Request', '1')
+            .set('tailscale-user-login', SEEDED_LOGIN)
+            .send({ repo: 'plain-repo', ref: malformed })
+            .expect(400);
+          expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+        }
+      }
+      expect(runSpy).not.toHaveBeenCalled();
+    } finally {
+      runSpy.mockRestore();
+    }
+  });
 });

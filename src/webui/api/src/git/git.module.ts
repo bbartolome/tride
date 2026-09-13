@@ -8,6 +8,7 @@ import { GitLogService } from './git-log.service';
 import { GitRemoteService } from './git-remote.service';
 import { GitRepoService } from './git-repo.service';
 import { GitRunner } from './git-runner.service';
+import { GitStashService } from './git-stash.service';
 import { GitStatusService } from './git-status.service';
 
 // GitRepoService depends on WorkspacePathService (repo-root containment and
@@ -24,6 +25,7 @@ import { GitStatusService } from './git-status.service';
     GitChangesService,
     GitBranchService,
     GitRemoteService,
+    GitStashService,
   ],
   exports: [
     GitRunner,
@@ -34,6 +36,7 @@ import { GitStatusService } from './git-status.service';
     GitChangesService,
     GitBranchService,
     GitRemoteService,
+    GitStashService,
   ],
 })
 export class GitModule {}
