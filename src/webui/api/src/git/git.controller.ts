@@ -1,5 +1,19 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ERROR_CODES } from '../common/error-codes';
+import {
+  CommitOptions,
+  CommitResult,
+  GitChangesService,
+  StageOptions,
+} from './git-changes.service';
 import {
   DiffResponse,
   DiffSummaryEntry,
@@ -11,24 +25,106 @@ import { toHttpException } from './git-runner.service';
 import { parseBoolFlag, parseIntParam } from './git-query.util';
 import { GitStatusResult, GitStatusService } from './git-status.service';
 
+function validationError(message: string): BadRequestException {
+  return new BadRequestException({
+    code: ERROR_CODES.VALIDATION_ERROR,
+    message,
+  });
+}
+
 function requireRepoParam(rawRepo: unknown): string {
   if (typeof rawRepo !== 'string' || rawRepo.length === 0) {
-    throw new BadRequestException({
-      code: ERROR_CODES.VALIDATION_ERROR,
-      message: 'repo query parameter is required',
-    });
+    throw validationError('repo query parameter is required');
   }
   return rawRepo;
 }
 
 function requireRevParam(rawRev: unknown): string {
   if (typeof rawRev !== 'string' || rawRev.length === 0) {
-    throw new BadRequestException({
-      code: ERROR_CODES.VALIDATION_ERROR,
-      message: 'rev query parameter is required',
-    });
+    throw validationError('rev query parameter is required');
   }
   return rawRev;
+}
+
+function asBodyRecord(body: unknown): Record<string, unknown> {
+  return (typeof body === 'object' && body !== null ? body : {}) as Record<
+    string,
+    unknown
+  >;
+}
+
+/**
+ * Shared by /git/stage and /git/unstage: the body must carry EXACTLY one of
+ * `paths` (a non-empty string array) or `all:true` — both together, or
+ * neither, is a 400 VALIDATION_ERROR (rather than silently preferring one).
+ */
+function parsePathsOrAll(record: Record<string, unknown>): StageOptions {
+  const pathsProvided = record.paths !== undefined;
+  const allProvided = record.all === true;
+
+  if (pathsProvided && allProvided) {
+    throw validationError(
+      'specify exactly one of "paths" or "all:true", not both',
+    );
+  }
+  if (!pathsProvided && !allProvided) {
+    throw validationError('specify exactly one of "paths" or "all:true"');
+  }
+  if (allProvided) {
+    return { all: true };
+  }
+
+  const rawPaths = record.paths;
+  if (
+    !Array.isArray(rawPaths) ||
+    rawPaths.length === 0 ||
+    !rawPaths.every((p) => typeof p === 'string')
+  ) {
+    throw validationError('paths must be a non-empty array of strings');
+  }
+  return { paths: rawPaths };
+}
+
+interface DiscardBody {
+  paths: string[];
+}
+
+// The single literal `confirm` must equal for /git/discard to proceed —
+// checked, and rejected, BEFORE any git call whatsoever (including before
+// `paths` is even validated), since this is the most destructive endpoint
+// in the app.
+const DISCARD_CONFIRM_LITERAL = 'discard';
+
+function parseDiscardBody(record: Record<string, unknown>): DiscardBody {
+  if (record.confirm !== DISCARD_CONFIRM_LITERAL) {
+    throw new BadRequestException({
+      code: ERROR_CODES.CONFIRMATION_REQUIRED,
+      message: `confirm must equal "${DISCARD_CONFIRM_LITERAL}"`,
+    });
+  }
+  const rawPaths = record.paths;
+  if (
+    !Array.isArray(rawPaths) ||
+    rawPaths.length === 0 ||
+    !rawPaths.every((p) => typeof p === 'string')
+  ) {
+    throw validationError('paths must be a non-empty array of strings');
+  }
+  return { paths: rawPaths };
+}
+
+function parseCommitBody(record: Record<string, unknown>): CommitOptions {
+  const message = record.message;
+  if (typeof message !== 'string' || message.trim().length === 0) {
+    throw validationError(
+      'message is required and must contain at least one non-whitespace character',
+    );
+  }
+  return {
+    message,
+    amend: record.amend === true,
+    signoff: record.signoff === true,
+  };
 }
 
 const DEFAULT_DIFF_CONTEXT = 3;
@@ -44,6 +140,7 @@ export class GitController {
     private readonly gitStatusService: GitStatusService,
     private readonly gitDiffService: GitDiffService,
     private readonly gitLogService: GitLogService,
+    private readonly gitChangesService: GitChangesService,
   ) {}
 
   @Get('repos')
@@ -144,6 +241,71 @@ export class GitController {
         skip: parseIntParam(skip, 0, MAX_LOG_SKIP, 0),
         path,
       });
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/stage')
+  @HttpCode(200)
+  async stage(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parsePathsOrAll(record);
+    try {
+      await this.gitChangesService.stage(repoRoot, opts);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/unstage')
+  @HttpCode(200)
+  async unstage(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parsePathsOrAll(record);
+    try {
+      await this.gitChangesService.unstage(repoRoot, opts);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/discard')
+  @HttpCode(200)
+  async discard(@Body() body: unknown): Promise<{ ok: true }> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    // Checked before the git call this guards, per this endpoint's
+    // destructive-confirmation contract — see `parseDiscardBody`.
+    const { paths } = parseDiscardBody(record);
+    try {
+      await this.gitChangesService.discard(repoRoot, paths);
+      return { ok: true };
+    } catch (err) {
+      throw toHttpException(err);
+    }
+  }
+
+  @Post('git/commit')
+  @HttpCode(200)
+  async commit(@Body() body: unknown): Promise<CommitResult> {
+    const record = asBodyRecord(body);
+    const repoRoot = await this.gitRepoService.resolveRepoRoot(
+      requireRepoParam(record.repo),
+    );
+    const opts = parseCommitBody(record);
+    try {
+      return await this.gitChangesService.commit(repoRoot, opts);
     } catch (err) {
       throw toHttpException(err);
     }

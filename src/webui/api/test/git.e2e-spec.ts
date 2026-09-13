@@ -1,7 +1,14 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { execFileSync } from 'child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import request from 'supertest';
@@ -11,6 +18,7 @@ import {
   removeMultiRepoWorkspace,
   type MultiRepoWorkspace,
 } from '../src/git/__fixtures__/git-repo-fixture';
+import { GitRunner } from '../src/git/git-runner.service';
 
 const SEEDED_LOGIN = 'seeded-admin@example.com';
 
@@ -452,5 +460,354 @@ describe('Git (e2e)', () => {
     expect(
       (scoped.body as Array<Record<string, unknown>>).map((e) => e.sha),
     ).toEqual([shas[3], shas[1]]);
+  });
+
+  // -------------------------------------------------------------------
+  // T11 — stage / unstage / discard / commit
+  // -------------------------------------------------------------------
+
+  it('POST /api/git/stage with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/stage')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', all: true })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/stage stages a given subset, and rejects both-or-neither of paths/all', async () => {
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+    writeFileSync(join(workspace.plainRepo, 'b.txt'), 'b\n');
+
+    await request(app.getHttpServer())
+      .post('/api/git/stage')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', paths: ['a.txt'] })
+      .expect(200);
+
+    const status = execFileSync('git', ['status', '--porcelain'], {
+      cwd: workspace.plainRepo,
+    }).toString();
+    expect(status).toContain('A  a.txt');
+    expect(status).toContain('?? b.txt');
+
+    const neither = await request(app.getHttpServer())
+      .post('/api/git/stage')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo' })
+      .expect(400);
+    expect(neither.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+
+    const both = await request(app.getHttpServer())
+      .post('/api/git/stage')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', paths: ['b.txt'], all: true })
+      .expect(400);
+    expect(both.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  it('POST /api/git/stage all:true stages everything', async () => {
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+    writeFileSync(join(workspace.plainRepo, 'b.txt'), 'b\n');
+
+    await request(app.getHttpServer())
+      .post('/api/git/stage')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', all: true })
+      .expect(200);
+
+    const status = execFileSync('git', ['status', '--porcelain'], {
+      cwd: workspace.plainRepo,
+    }).toString();
+    expect(status).toContain('A  a.txt');
+    expect(status).toContain('A  b.txt');
+  });
+
+  it('POST /api/git/unstage with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/unstage')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', all: true })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/unstage reverses a prior stage for the same paths', async () => {
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+    writeFileSync(join(workspace.plainRepo, 'b.txt'), 'b\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stage')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', all: true })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/git/unstage')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', paths: ['a.txt'] })
+      .expect(200);
+
+    const status = execFileSync('git', ['status', '--porcelain'], {
+      cwd: workspace.plainRepo,
+    }).toString();
+    expect(status).toContain('?? a.txt');
+    expect(status).toContain('A  b.txt');
+  });
+
+  it('POST /api/git/discard with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/discard')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', paths: ['a.txt'], confirm: 'discard' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/discard reverts a tracked modification, verified by content on disk', async () => {
+    writeFileSync(join(workspace.plainRepo, 'tracked.txt'), 'original\n');
+    execFileSync('git', ['add', '--', 'tracked.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    execFileSync('git', ['commit', '--quiet', '-m', 'add tracked.txt'], {
+      cwd: workspace.plainRepo,
+    });
+    writeFileSync(join(workspace.plainRepo, 'tracked.txt'), 'modified\n');
+
+    await request(app.getHttpServer())
+      .post('/api/git/discard')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({
+        repo: 'plain-repo',
+        paths: ['tracked.txt'],
+        confirm: 'discard',
+      })
+      .expect(200);
+
+    const onDisk = readFileSync(
+      join(workspace.plainRepo, 'tracked.txt'),
+      'utf8',
+    );
+    expect(onDisk).toBe('original\n');
+  });
+
+  it('POST /api/git/discard removes an untracked file and directory within `paths` while a sibling untracked file outside `paths` survives', async () => {
+    const scopedFile = join(workspace.plainRepo, 'scoped-untracked.txt');
+    writeFileSync(scopedFile, 'scoped junk\n');
+    const scopedDir = join(workspace.plainRepo, 'scoped-dir');
+    mkdirSync(scopedDir);
+    writeFileSync(join(scopedDir, 'inner.txt'), 'inner junk\n');
+    const outsideFile = join(workspace.plainRepo, 'outside-untracked.txt');
+    writeFileSync(outsideFile, 'must survive\n');
+
+    await request(app.getHttpServer())
+      .post('/api/git/discard')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({
+        repo: 'plain-repo',
+        paths: ['scoped-untracked.txt', 'scoped-dir'],
+        confirm: 'discard',
+      })
+      .expect(200);
+
+    expect(existsSync(scopedFile)).toBe(false);
+    expect(existsSync(scopedDir)).toBe(false);
+    // The scoping proof: untracked content NOT named in `paths` must
+    // survive `clean -fd` untouched.
+    expect(existsSync(outsideFile)).toBe(true);
+    expect(readFileSync(outsideFile, 'utf8')).toBe('must survive\n');
+  });
+
+  it('POST /api/git/discard with a wrong/missing confirm -> 400 CONFIRMATION_REQUIRED, and makes no git call at all', async () => {
+    const runSpy = jest.spyOn(GitRunner.prototype, 'run');
+    try {
+      writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+
+      const wrong = await request(app.getHttpServer())
+        .post('/api/git/discard')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'plain-repo', paths: ['a.txt'], confirm: 'nope' })
+        .expect(400);
+      expect(wrong.body).toMatchObject({ code: 'CONFIRMATION_REQUIRED' });
+
+      const missing = await request(app.getHttpServer())
+        .post('/api/git/discard')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'plain-repo', paths: ['a.txt'] })
+        .expect(400);
+      expect(missing.body).toMatchObject({ code: 'CONFIRMATION_REQUIRED' });
+
+      expect(runSpy).not.toHaveBeenCalled();
+      // The file must still be exactly as it was — nothing touched it.
+      expect(existsSync(join(workspace.plainRepo, 'a.txt'))).toBe(true);
+    } finally {
+      runSpy.mockRestore();
+    }
+  });
+
+  it('POST /api/git/commit with no identity header -> 401 AUTH_REQUIRED', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/commit')
+      .set('X-Webui-Request', '1')
+      .send({ repo: 'plain-repo', message: 'x' })
+      .expect(401);
+    expect(res.body).toEqual({
+      code: 'AUTH_REQUIRED',
+      message: 'Authentication required',
+    });
+  });
+
+  it('POST /api/git/commit happy path creates a new commit (sha changes)', async () => {
+    const shaBefore = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+    await request(app.getHttpServer())
+      .post('/api/git/stage')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', all: true })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .post('/api/git/commit')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message: 'add a.txt' })
+      .expect(200);
+
+    const shaAfter = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(shaAfter).not.toBe(shaBefore);
+    expect((res.body as { sha: string }).sha).toBe(shaAfter);
+  });
+
+  it('POST /api/git/commit amend replaces the message without changing history length', async () => {
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+    execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+    execFileSync('git', ['commit', '--quiet', '-m', 'original message'], {
+      cwd: workspace.plainRepo,
+    });
+    const countBefore = execFileSync('git', ['rev-list', '--count', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+
+    await request(app.getHttpServer())
+      .post('/api/git/commit')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message: 'amended message', amend: true })
+      .expect(200);
+
+    const countAfter = execFileSync('git', ['rev-list', '--count', 'HEAD'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(countAfter).toBe(countBefore);
+    const message = execFileSync('git', ['log', '-1', '--format=%B'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(message).toBe('amended message');
+  });
+
+  it('POST /api/git/commit signoff appends a Signed-off-by trailer', async () => {
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+    execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+
+    await request(app.getHttpServer())
+      .post('/api/git/commit')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message: 'signed commit', signoff: true })
+      .expect(200);
+
+    const message = execFileSync('git', ['log', '-1', '--format=%B'], {
+      cwd: workspace.plainRepo,
+    }).toString();
+    expect(message).toContain('Signed-off-by:');
+  });
+
+  it('POST /api/git/commit on a clean tree -> 409 NOTHING_TO_COMMIT', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/git/commit')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message: 'no-op' })
+      .expect(409);
+    expect(res.body).toMatchObject({ code: 'NOTHING_TO_COMMIT' });
+  });
+
+  it('POST /api/git/commit with a blank/whitespace-only message -> 400 VALIDATION_ERROR, and makes no git call, even with amend:true', async () => {
+    const runSpy = jest.spyOn(GitRunner.prototype, 'run');
+    try {
+      const blank = await request(app.getHttpServer())
+        .post('/api/git/commit')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'plain-repo', message: '   ' })
+        .expect(400);
+      expect(blank.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+
+      const blankAmend = await request(app.getHttpServer())
+        .post('/api/git/commit')
+        .set('X-Webui-Request', '1')
+        .set('tailscale-user-login', SEEDED_LOGIN)
+        .send({ repo: 'plain-repo', message: '', amend: true })
+        .expect(400);
+      expect(blankAmend.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+
+      expect(runSpy).not.toHaveBeenCalled();
+    } finally {
+      runSpy.mockRestore();
+    }
+  });
+
+  it('POST /api/git/commit with a message beginning with "-" succeeds (no assertNotOptionLike on -m\'s value)', async () => {
+    writeFileSync(join(workspace.plainRepo, 'a.txt'), 'a\n');
+    execFileSync('git', ['add', '-A'], { cwd: workspace.plainRepo });
+
+    const message = '-fix: leading dash';
+    await request(app.getHttpServer())
+      .post('/api/git/commit')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ repo: 'plain-repo', message })
+      .expect(200);
+
+    const loggedMessage = execFileSync('git', ['log', '-1', '--format=%B'], {
+      cwd: workspace.plainRepo,
+    })
+      .toString()
+      .trim();
+    expect(loggedMessage).toBe(message);
   });
 });
