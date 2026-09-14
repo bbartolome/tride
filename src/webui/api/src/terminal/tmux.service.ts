@@ -136,11 +136,52 @@ export class TmuxService {
         return existing;
       }
 
-      // No trailing command: this is the login-shell form (tmux prefixes
-      // argv[0] with `-`), which is how the pane inherits the devcontainer
-      // .bashrc block, SDKMAN, and the npm-global PATH — see
-      // src/webui-tmux.conf's comment. Do not add a command here.
-      await this.run(['new-session', '-d', '-s', opts.name, '-c', opts.absCwd]);
+      if (opts.mode === 'claude') {
+        // Supplying ANY command to `new-session` switches tmux from the
+        // login-shell form to its implicit `${SHELL} -c` form, which is a
+        // NON-login shell — /etc/profile.d/sdkman.sh would not be sourced
+        // and Java/Maven would be invisible to Claude's own tool calls
+        // inside this session (F119). The explicit `bash -lc '...'` here
+        // is what restores a login shell around the command.
+        //
+        // `; exec bash -l` keeps the pane alive (as a plain login shell)
+        // after `claude` exits, rather than the session vanishing.
+        //
+        // No quoting/escaping is added on top of the template string, by
+        // construction, not oversight: `opts.absCwd` never appears inside
+        // this string (it's the separate `-c` argv element above), and
+        // `opts.label` was already validated by the controller against
+        // /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/ (F126) — starting alphanumeric
+        // rules out a leading dash being read as a flag, and the character
+        // class excludes spaces, quotes, semicolons and every other shell
+        // metacharacter. The whole payload is one argv element passed to
+        // execFile with shell:false, so there is exactly one shell parse:
+        // bash -lc's own. Do not add quoting/escaping here.
+        await this.run([
+          'new-session',
+          '-d',
+          '-s',
+          opts.name,
+          '-c',
+          opts.absCwd,
+          'bash',
+          '-lc',
+          `claude --remote-control ${opts.label}; exec bash -l`,
+        ]);
+      } else {
+        // No trailing command: this is the login-shell form (tmux prefixes
+        // argv[0] with `-`), which is how the pane inherits the devcontainer
+        // .bashrc block, SDKMAN, and the npm-global PATH — see
+        // src/webui-tmux.conf's comment. Do not add a command here.
+        await this.run([
+          'new-session',
+          '-d',
+          '-s',
+          opts.name,
+          '-c',
+          opts.absCwd,
+        ]);
+      }
       await this.run([
         'set-option',
         '-t',

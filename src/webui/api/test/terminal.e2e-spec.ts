@@ -149,6 +149,19 @@ describe('Terminal (e2e)', () => {
     }
   }
 
+  /** Direct, out-of-band read of a `@webui_*` session option — used to
+   * prove idempotency (F120) at the tmux level, not just via the API
+   * response. */
+  function sessionOption(id: string, option: string): string {
+    return execFileSync(
+      'tmux',
+      ['-L', tmuxSocket, 'show-options', '-t', id, '-v', option],
+      { stdio: ['ignore', 'pipe', 'ignore'], env: process.env },
+    )
+      .toString()
+      .trim();
+  }
+
   // -------------------------------------------------------------------
   // 401 coverage (F69): every route, no tailscale-user-login header.
   // -------------------------------------------------------------------
@@ -243,24 +256,24 @@ describe('Terminal (e2e)', () => {
   // create — claude mode idempotency (F114/F120)
   // -------------------------------------------------------------------
 
-  it('POST /api/terminals twice with mode:"claude", same cwd, different labels -> same id, one session, first label wins', async () => {
+  it('POST /api/terminals twice with mode:"claude", same cwd, different labels -> same id, one session, first label wins (T19 quick-launch)', async () => {
     const first = await request(app.getHttpServer())
       .post('/api/terminals')
       .set('X-Webui-Request', '1')
       .set('tailscale-user-login', SEEDED_LOGIN)
-      .send({ cwd: 'proj', mode: 'claude', label: 'first-label' })
+      .send({ cwd: 'proj', mode: 'claude', label: 'test-a' })
       .expect(200);
     const second = await request(app.getHttpServer())
       .post('/api/terminals')
       .set('X-Webui-Request', '1')
       .set('tailscale-user-login', SEEDED_LOGIN)
-      .send({ cwd: 'proj', mode: 'claude', label: 'second-label' })
+      .send({ cwd: 'proj', mode: 'claude', label: 'test-b' })
       .expect(200);
 
     const firstBody = first.body as TerminalSummaryBody;
     const secondBody = second.body as TerminalSummaryBody;
     expect(secondBody.id).toBe(firstBody.id);
-    expect(secondBody.label).toBe('first-label');
+    expect(secondBody.label).toBe('test-a');
     expect(hasSession(firstBody.id)).toBe(true);
 
     const list = await request(app.getHttpServer())
@@ -269,6 +282,21 @@ describe('Terminal (e2e)', () => {
       .expect(200);
     const sessions = list.body as TerminalSummaryBody[];
     expect(sessions.filter((s) => s.mode === 'claude')).toHaveLength(1);
+
+    // Direct proof, from tmux itself rather than the API, that the second
+    // call attached to the existing session instead of spawning a second
+    // Claude: exactly one session with this name exists, and its
+    // `@webui_label`/`@webui_mode` options are unchanged from the first
+    // call (F120's idempotency — attaching means "get what's there", not
+    // "merge in whatever was passed this time").
+    const sessionNames = listSessionNamesRaw()
+      .split('\n')
+      .filter((line) => line.length > 0);
+    expect(sessionNames.filter((name) => name === firstBody.id)).toHaveLength(
+      1,
+    );
+    expect(sessionOption(firstBody.id, '@webui_label')).toBe('test-a');
+    expect(sessionOption(firstBody.id, '@webui_mode')).toBe('claude');
   });
 
   // -------------------------------------------------------------------

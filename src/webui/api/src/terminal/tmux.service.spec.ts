@@ -169,6 +169,69 @@ describe('TmuxService (against real tmux)', () => {
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
+  it('create() argv: mode "shell" has no trailing command; mode "claude" wraps in an explicit `bash -lc` with the label embedded unquoted', async () => {
+    // Mutation guard (F134/F99 class of regression): someone "simplifying"
+    // `bash -lc '...'` back to the implicit new-session command form would
+    // silently lose the login shell. Assert the mechanism (exact argv),
+    // not just an exit code.
+    const execFileMock = childProcess.execFile as unknown as jest.Mock;
+
+    execFileMock.mockClear();
+    await service.create({
+      name: 'wui-eeeeeeeeeeee',
+      absCwd: tmuxTmpDir,
+      mode: 'shell',
+      label: 'unused-for-shell',
+    });
+    const shellCalls = execFileMock.mock.calls as unknown as Array<
+      [string, string[]]
+    >;
+    const shellNewSessionCall = shellCalls.find(
+      (call) => call[1][4] === 'new-session',
+    );
+    expect(shellNewSessionCall![1]).toEqual([
+      '-L',
+      socket,
+      '-f',
+      confPath,
+      'new-session',
+      '-d',
+      '-s',
+      'wui-eeeeeeeeeeee',
+      '-c',
+      tmuxTmpDir,
+    ]);
+
+    execFileMock.mockClear();
+    await service.create({
+      name: 'wui-ffffffffffff',
+      absCwd: tmuxTmpDir,
+      mode: 'claude',
+      label: 'my-label',
+    });
+    const claudeCalls = execFileMock.mock.calls as unknown as Array<
+      [string, string[]]
+    >;
+    const claudeNewSessionCall = claudeCalls.find(
+      (call) => call[1][4] === 'new-session',
+    );
+    expect(claudeNewSessionCall![1]).toEqual([
+      '-L',
+      socket,
+      '-f',
+      confPath,
+      'new-session',
+      '-d',
+      '-s',
+      'wui-ffffffffffff',
+      '-c',
+      tmuxTmpDir,
+      'bash',
+      '-lc',
+      'claude --remote-control my-label; exec bash -l',
+    ]);
+  });
+
   it('concurrent create() of the same name results in exactly one session', async () => {
     const opts = {
       name: 'wui-dddddddddddd',
