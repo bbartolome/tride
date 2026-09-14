@@ -64,7 +64,7 @@ jobs:
         run: npm run build
 
   web:
-    name: Web (build)
+    name: Web (lint, test, build)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -98,11 +98,25 @@ jobs:
         working-directory: src/webui/web
         run: npm ci --no-audit --no-fund
 
-      # Build only, deliberately. A fresh `ng new` ships no `lint` script
-      # (that needs @angular-eslint) and `ng test` needs a headless browser
-      # configured, so adding either here would break every PR the moment
-      # T20 lands - the same failure the probe above exists to prevent.
-      # T20 may add them once it has actually set both up.
+      # T20 wired up @angular-eslint (`ng add`) and vitest is the CLI's
+      # default test runner - no headless browser to configure, vitest runs
+      # under jsdom - so Lint and Test are safe to run here now.
+      - name: Lint
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: src/webui/web
+        run: npm run lint
+
+      # `ng test` (vitest) already exits after one run instead of watching
+      # when stdin isn't a TTY, which is always true on a runner - CI=true
+      # is set anyway to make that explicit rather than relying on the
+      # auto-detection.
+      - name: Test
+        if: steps.probe.outputs.exists == 'true'
+        working-directory: src/webui/web
+        env:
+          CI: 'true'
+        run: npm test
+
       - name: Build
         if: steps.probe.outputs.exists == 'true'
         working-directory: src/webui/web

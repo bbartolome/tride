@@ -8,6 +8,7 @@ describe('WebuiConfigService', () => {
     'WEBUI_STATE_DIR',
     'WEBUI_TMUX_SOCKET',
     'WEBUI_TMUX_CONF',
+    'WEBUI_STATIC_ROOT',
     'HOME',
   ] as const;
 
@@ -42,6 +43,7 @@ describe('WebuiConfigService', () => {
       stateDir: '/var/lib/devcontainer-webui',
       tmuxSocket: 'webui',
       tmuxConfPath: '/etc/devcontainer/webui-tmux.conf',
+      staticRoot: null,
     });
   });
 
@@ -53,6 +55,7 @@ describe('WebuiConfigService', () => {
     process.env.WEBUI_STATE_DIR = '/tmp/state';
     process.env.WEBUI_TMUX_SOCKET = 'devsocket';
     process.env.WEBUI_TMUX_CONF = '/tmp/custom-tmux.conf';
+    process.env.WEBUI_STATIC_ROOT = '/srv/web/browser';
 
     const service = new WebuiConfigService();
 
@@ -61,6 +64,7 @@ describe('WebuiConfigService', () => {
     expect(service.config.stateDir).toBe('/tmp/state');
     expect(service.config.tmuxSocket).toBe('devsocket');
     expect(service.config.tmuxConfPath).toBe('/tmp/custom-tmux.conf');
+    expect(service.config.staticRoot).toBe('/srv/web/browser');
     // trimmed, lowercased, deduped
     expect(service.config.adminLogins).toEqual(
       new Set(['alice@example.com', 'bob@example.com']),

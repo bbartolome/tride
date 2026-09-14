@@ -1,0 +1,15 @@
+@if (!hidden()) {
+  <nav class="bottom-nav" aria-label="Primary">
+    @for (tab of tabs; track tab.path) {
+      <a
+        class="tab"
+        [routerLink]="tab.path"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: tab.path === '/' }"
+      >
+        <span class="icon" aria-hidden="true">{{ tab.icon }}</span>
+        <span class="label">{{ tab.label }}</span>
+      </a>
+    }
+  </nav>
+}

@@ -7,6 +7,18 @@ export interface WebuiConfig {
   stateDir: string;
   tmuxSocket: string;
   tmuxConfPath: string;
+  /**
+   * Absolute path to the built Angular `browser/` output to serve as static
+   * assets, or `null` to fall back to the Docker image's flattened layout
+   * (`join(__dirname, '..', '..', 'web', 'browser')` in app.module.ts).
+   * Needed because running `node dist/main.js` straight from
+   * `src/webui/api` on the host (rather than inside the built container
+   * image) puts the real Angular output two path segments away, at
+   * `src/webui/web/dist/web/browser` — this override is what lets host-only
+   * manual verification (and any future non-container deployment) point at
+   * the real location without touching code.
+   */
+  staticRoot: string | null;
 }
 
 const DEFAULT_PORT = 8088;
@@ -46,6 +58,7 @@ export class WebuiConfigService {
       stateDir: process.env.WEBUI_STATE_DIR ?? DEFAULT_STATE_DIR,
       tmuxSocket: process.env.WEBUI_TMUX_SOCKET ?? DEFAULT_TMUX_SOCKET,
       tmuxConfPath: process.env.WEBUI_TMUX_CONF ?? DEFAULT_TMUX_CONF_PATH,
+      staticRoot: process.env.WEBUI_STATIC_ROOT ?? null,
     });
   }
 
