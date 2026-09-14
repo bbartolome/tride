@@ -236,7 +236,18 @@ export class TmuxService {
       execFile(
         'tmux',
         fullArgs,
-        { shell: false, timeout: 10_000, killSignal: 'SIGKILL' },
+        {
+          shell: false,
+          timeout: 10_000,
+          killSignal: 'SIGKILL',
+          // Pass the environment explicitly so this and PtyService resolve
+          // the same tmux socket. tmux locates its socket via TMUX_TMPDIR,
+          // and PtyService already passes env explicitly; leaving it implicit
+          // here means the two can disagree about where the server lives —
+          // create/list succeed against one directory while the attach looks
+          // in another and reports "no sessions".
+          env: process.env,
+        },
         (error, stdout, stderr) => {
           if (!error) {
             resolvePromise({ stdout, stderr, exitCode: 0 });

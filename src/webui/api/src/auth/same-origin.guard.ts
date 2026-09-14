@@ -62,6 +62,49 @@ export function isSameOriginRequest(
   return true;
 }
 
+/**
+ * The CSRF defence for the `/ws/term` WebSocket upgrade. A WEBSOCKET
+ * upgrade handshake is an HTTP **GET**, so `isSameOriginRequest` cannot be
+ * reused here: calling it with method `'GET'` short-circuits to `true` via
+ * `SAFE_METHODS` and performs no `Origin` check at all — a real bypass,
+ * since upgrades are not subject to CORS either (F113). Forcing a
+ * fabricated non-safe method through `isSameOriginRequest` instead would
+ * unconditionally require `X-Webui-Request: 1`, which the browser
+ * `WebSocket` API can never set on a handshake — so no legitimate
+ * connection could ever pass.
+ *
+ * This is therefore a NEW, independent sibling function with its own,
+ * stricter rule: unlike the HTTP guard, `Origin` is REQUIRED (not
+ * optional-if-present) — a WebSocket handshake without an `Origin` header
+ * only happens from a non-browser client, which has no business connecting
+ * here anyway.
+ *
+ *  - `Origin` must be present and equal to `expectedOrigin`.
+ *  - `Sec-Fetch-Site`, when present, must be `same-origin` or `none`.
+ *
+ * Additive only: `isSameOriginRequest` and its existing tests are untouched.
+ */
+export function isSameOriginUpgrade(
+  headers: HeaderBag,
+  expectedOrigin: string,
+): boolean {
+  const origin = firstHeaderValue(headers, 'origin');
+  if (origin === undefined || origin !== expectedOrigin) {
+    return false;
+  }
+
+  const secFetchSite = firstHeaderValue(headers, 'sec-fetch-site');
+  if (
+    secFetchSite !== undefined &&
+    secFetchSite !== 'same-origin' &&
+    secFetchSite !== 'none'
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 @Injectable()
 export class SameOriginGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {

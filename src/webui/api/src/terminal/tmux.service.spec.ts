@@ -52,6 +52,7 @@ describe('TmuxService (against real tmux)', () => {
     try {
       childProcess.execFileSync('tmux', ['-L', socket, 'kill-server'], {
         stdio: 'ignore',
+        env: process.env,
       });
     } catch {
       // Nonzero + "no server running" is expected once the last session in

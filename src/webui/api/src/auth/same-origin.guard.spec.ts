@@ -1,6 +1,10 @@
 import type { ExecutionContext } from '@nestjs/common';
 import type { IncomingMessage } from 'http';
-import { isSameOriginRequest, SameOriginGuard } from './same-origin.guard';
+import {
+  isSameOriginRequest,
+  isSameOriginUpgrade,
+  SameOriginGuard,
+} from './same-origin.guard';
 
 function createContext(
   headers: Record<string, string | string[] | undefined>,
@@ -118,5 +122,60 @@ describe('SameOriginGuard', () => {
       'POST',
     );
     expect(guard.canActivate(ctx)).toBe(true);
+  });
+});
+
+describe('isSameOriginUpgrade (F113 — NOT isSameOriginRequest reused)', () => {
+  const expectedOrigin = 'http://tride:8088';
+
+  it('rejects a handshake with no Origin header at all (required, unlike the HTTP guard)', () => {
+    expect(isSameOriginUpgrade({}, expectedOrigin)).toBe(false);
+  });
+
+  it('rejects a handshake with a foreign Origin', () => {
+    expect(
+      isSameOriginUpgrade({ origin: 'http://evil.com' }, expectedOrigin),
+    ).toBe(false);
+  });
+
+  it('rejects a handshake with Sec-Fetch-Site: cross-site even with the correct Origin', () => {
+    expect(
+      isSameOriginUpgrade(
+        { origin: expectedOrigin, 'sec-fetch-site': 'cross-site' },
+        expectedOrigin,
+      ),
+    ).toBe(false);
+  });
+
+  it('allows a handshake with the correct Origin and no Sec-Fetch-Site header', () => {
+    expect(
+      isSameOriginUpgrade({ origin: expectedOrigin }, expectedOrigin),
+    ).toBe(true);
+  });
+
+  it('allows a handshake with Sec-Fetch-Site: same-origin', () => {
+    expect(
+      isSameOriginUpgrade(
+        { origin: expectedOrigin, 'sec-fetch-site': 'same-origin' },
+        expectedOrigin,
+      ),
+    ).toBe(true);
+  });
+
+  it('allows a handshake with Sec-Fetch-Site: none', () => {
+    expect(
+      isSameOriginUpgrade(
+        { origin: expectedOrigin, 'sec-fetch-site': 'none' },
+        expectedOrigin,
+      ),
+    ).toBe(true);
+  });
+
+  it('is unfazed by a fabricated non-safe HTTP method — it never looks at method at all', () => {
+    // Sanity check for the F113 bug this function exists to avoid: nothing
+    // here special-cases GET/HEAD or requires X-Webui-Request.
+    expect(
+      isSameOriginUpgrade({ origin: expectedOrigin }, expectedOrigin),
+    ).toBe(true);
   });
 });

@@ -79,6 +79,7 @@ describe('Terminal (e2e)', () => {
     try {
       execFileSync('tmux', ['-L', tmuxSocket, 'kill-server'], {
         stdio: 'ignore',
+        env: process.env,
       });
     } catch {
       // Nonzero + "no server running" is expected once every session has
@@ -127,6 +128,7 @@ describe('Terminal (e2e)', () => {
     try {
       execFileSync('tmux', ['-L', tmuxSocket, 'has-session', '-t', id], {
         stdio: 'ignore',
+        env: process.env,
       });
       return true;
     } catch {
@@ -139,7 +141,7 @@ describe('Terminal (e2e)', () => {
       return execFileSync(
         'tmux',
         ['-L', tmuxSocket, 'list-sessions', '-F', '#{session_name}'],
-        { stdio: ['ignore', 'pipe', 'ignore'] },
+        { stdio: ['ignore', 'pipe', 'ignore'], env: process.env },
       ).toString();
     } catch {
       // "no server running"/"error connecting to" — no sessions at all yet.
