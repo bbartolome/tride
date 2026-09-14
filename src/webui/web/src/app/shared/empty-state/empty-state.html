@@ -1,0 +1,6 @@
+<div class="empty-state">
+  <p class="message">{{ message() }}</p>
+  @if (retry(); as retryFn) {
+    <button type="button" class="retry" (click)="retryFn()">{{ retryLabel() }}</button>
+  }
+</div>

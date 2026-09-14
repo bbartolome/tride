@@ -1,0 +1,57 @@
+<header class="toolbar">
+  <h1>Repos</h1>
+  <a class="browse-link" routerLink="/browse">Browse workspace</a>
+  <button
+    type="button"
+    class="refresh"
+    [disabled]="status() === 'loading'"
+    (click)="refresh()"
+  >
+    Refresh
+  </button>
+</header>
+
+@if (status() === 'error') {
+  <app-empty-state
+    [message]="error()?.message ?? 'Failed to load repos.'"
+    [retry]="reload"
+  />
+} @else if (status() === 'loading' && repos().length === 0) {
+  <p class="loading">Loading repos…</p>
+} @else if (repos().length === 0) {
+  <app-empty-state message="No repos found under the workspace root." />
+} @else {
+  <ul class="repo-list">
+    @for (repo of repos(); track repo.path) {
+      <li>
+        <a class="repo-card" [routerLink]="['/repo', ...repoSegments(repo.path)]">
+          <div class="repo-card-main">
+            <span class="name">{{ repo.name }}</span>
+            @if (repo.branch !== null) {
+              <span class="branch">{{ repo.branch }}</span>
+            } @else {
+              <span class="badge detached">detached</span>
+            }
+            @if (repo.isWorktree) {
+              <span class="badge worktree">worktree</span>
+            }
+          </div>
+          <div class="repo-card-meta">
+            @if (repo.ahead > 0) {
+              <span class="ahead">↑{{ repo.ahead }}</span>
+            }
+            @if (repo.behind > 0) {
+              <span class="behind">↓{{ repo.behind }}</span>
+            }
+            <span
+              class="dot"
+              [class.dirty]="repo.dirty"
+              [class.clean]="!repo.dirty"
+              [attr.aria-label]="repo.dirty ? 'dirty' : 'clean'"
+            ></span>
+          </div>
+        </a>
+      </li>
+    }
+  </ul>
+}
