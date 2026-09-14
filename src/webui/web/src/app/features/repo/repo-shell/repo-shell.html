@@ -1,0 +1,59 @@
+<header class="header">
+  <div class="header-main">
+    <h1>{{ repoName() }}</h1>
+    @if (summary(); as s) {
+      <div class="header-meta">
+        @if (s.detached) {
+          <span class="badge detached">detached</span>
+        } @else if (s.branch !== null) {
+          <span class="branch">{{ s.branch }}</span>
+        }
+        @if (s.ahead > 0) {
+          <span class="ahead">↑{{ s.ahead }}</span>
+        }
+        @if (s.behind > 0) {
+          <span class="behind">↓{{ s.behind }}</span>
+        }
+      </div>
+    }
+  </div>
+  <button
+    type="button"
+    class="terminal-here"
+    [disabled]="terminalBusy()"
+    (click)="openTerminalHere()"
+  >
+    ⌨️ Open terminal here
+  </button>
+</header>
+
+<nav class="tab-bar" aria-label="Repo sections">
+  @for (tab of tabs; track tab.id) {
+    <button
+      type="button"
+      class="tab"
+      [class.active]="activeTab() === tab.id"
+      [attr.aria-selected]="activeTab() === tab.id"
+      (click)="selectTab(tab.id)"
+    >
+      {{ tab.label }}
+    </button>
+  }
+</nav>
+
+<div class="tab-content">
+  @switch (activeTab()) {
+    @case ('changes') {
+      <app-changes-tab [repo]="repo()" />
+    }
+    @case ('branches') {
+      <div class="tab-placeholder branches">Branches — coming soon.</div>
+    }
+    @case ('log') {
+      <div class="tab-placeholder log">Log — coming soon.</div>
+    }
+    @case ('stash') {
+      <div class="tab-placeholder stash">Stash — coming soon.</div>
+    }
+  }
+</div>

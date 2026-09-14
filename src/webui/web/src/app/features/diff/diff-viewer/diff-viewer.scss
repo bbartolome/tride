@@ -1,0 +1,124 @@
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 1rem;
+  background: var(--bg, #fff);
+  border-bottom: 1px solid var(--border, #ddd);
+}
+
+.back {
+  align-self: flex-start;
+  color: inherit;
+  font-size: 0.875rem;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.file-path {
+  overflow: hidden;
+  flex: 1;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  flex-shrink: 0;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+
+  &.staged {
+    background: var(--badge-info-bg, #e0ecff);
+    color: var(--badge-info-fg, #1a4fa0);
+  }
+
+  &.unstaged {
+    background: var(--badge-warn-bg, #fff2cc);
+    color: var(--badge-warn-fg, #7a5c00);
+  }
+}
+
+.loading {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted, #666);
+}
+
+.diff {
+  padding-bottom: 1rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+}
+
+.hunk {
+  border-bottom: 1px solid var(--border, #eee);
+}
+
+.hunk-header {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: var(--hunk-header-bg, #f4f4f4);
+  color: var(--muted, #666);
+  font: inherit;
+  text-align: left;
+}
+
+.chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+
+  &.collapsed {
+    transform: rotate(-90deg);
+  }
+}
+
+.hunk-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hunk-lines {
+  overflow-x: auto;
+}
+
+.line {
+  display: flex;
+  padding: 0 1rem;
+  white-space: pre;
+
+  &.add {
+    background: var(--diff-add-bg, #e6ffed);
+    color: var(--diff-add-fg, #22863a);
+  }
+
+  &.del {
+    background: var(--diff-del-bg, #ffeef0);
+    color: var(--diff-del-fg, #b31d28);
+  }
+}
+
+.marker {
+  flex-shrink: 0;
+  width: 1ch;
+  margin-right: 0.5rem;
+  opacity: 0.7;
+}

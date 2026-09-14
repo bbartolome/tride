@@ -1,0 +1,50 @@
+<header class="toolbar">
+  <a class="back" [routerLink]="['/repo', ...repoSegments()]">‹ {{ repo() }}</a>
+  <div class="file-info">
+    <span class="file-path">{{ file() }}</span>
+    <span class="badge" [class.staged]="stagedBool()" [class.unstaged]="!stagedBool()">
+      {{ stagedBool() ? 'staged' : 'unstaged' }}
+    </span>
+  </div>
+</header>
+
+@if (status() === 'error') {
+  <app-empty-state
+    [message]="error()?.message ?? 'Failed to load the diff.'"
+    [retry]="reload"
+  />
+} @else if (status() === 'loading') {
+  <p class="loading">Loading diff…</p>
+} @else if (binary()) {
+  <app-empty-state message="Binary file — no preview." />
+} @else if (hunks().length === 0) {
+  <app-empty-state message="No differences." />
+} @else {
+  <div class="diff">
+    @for (hunk of hunks(); track $index) {
+      <section class="hunk">
+        <button
+          type="button"
+          class="hunk-header"
+          [attr.aria-expanded]="!isCollapsed($index)"
+          (click)="toggleHunk($index)"
+        >
+          <span class="chevron" [class.collapsed]="isCollapsed($index)" aria-hidden="true">▾</span>
+          <span class="hunk-text">{{ hunk.header }}</span>
+        </button>
+        @if (!isCollapsed($index)) {
+          <div class="hunk-lines">
+            @for (line of hunk.lines; track $index) {
+              <div class="line" [class.add]="line.type === 'add'" [class.del]="line.type === 'del'">
+                <span class="marker" aria-hidden="true">{{
+                  line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '
+                }}</span
+                ><span class="text">{{ line.text }}</span>
+              </div>
+            }
+          </div>
+        }
+      </section>
+    }
+  </div>
+}

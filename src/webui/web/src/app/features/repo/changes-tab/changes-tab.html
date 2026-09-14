@@ -1,0 +1,88 @@
+@if (status() === 'error') {
+  <app-empty-state
+    [message]="error()?.message ?? 'Failed to load changes.'"
+    [retry]="reload"
+  />
+} @else if (status() === 'loading' && isEmpty()) {
+  <p class="loading">Loading changes…</p>
+} @else if (isEmpty()) {
+  <app-empty-state message="No changes — working tree clean." />
+} @else {
+  @if (conflicts().length > 0) {
+    <section class="change-section conflicts">
+      <h2>Conflicts</h2>
+      <ul class="entry-list">
+        @for (entry of conflicts(); track entry.path) {
+          <li>
+            <a class="entry-row" [routerLink]="diffLink()" [queryParams]="diffQuery(entry, false)">
+              <span class="path">{{ entry.path }}</span>
+              <span class="badge conflict">conflict</span>
+            </a>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (staged().length > 0) {
+    <section class="change-section staged">
+      <h2>Staged</h2>
+      <ul class="entry-list">
+        @for (entry of staged(); track entry.path) {
+          <li>
+            <a class="entry-row" [routerLink]="diffLink()" [queryParams]="diffQuery(entry, true)">
+              @if (entry.kind === 'renamed') {
+                <span class="path">
+                  <span class="orig-path">{{ entry.origPath }}</span>
+                  <span class="arrow" aria-hidden="true">→</span>
+                  {{ entry.path }}
+                </span>
+              } @else {
+                <span class="path">{{ entry.path }}</span>
+              }
+            </a>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (unstaged().length > 0) {
+    <section class="change-section unstaged">
+      <h2>Unstaged</h2>
+      <ul class="entry-list">
+        @for (entry of unstaged(); track entry.path) {
+          <li>
+            <a class="entry-row" [routerLink]="diffLink()" [queryParams]="diffQuery(entry, false)">
+              @if (entry.kind === 'renamed') {
+                <span class="path">
+                  <span class="orig-path">{{ entry.origPath }}</span>
+                  <span class="arrow" aria-hidden="true">→</span>
+                  {{ entry.path }}
+                </span>
+              } @else {
+                <span class="path">{{ entry.path }}</span>
+              }
+            </a>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (untracked().length > 0) {
+    <section class="change-section untracked">
+      <h2>Untracked</h2>
+      <ul class="entry-list">
+        @for (entry of untracked(); track entry.path) {
+          <li class="entry-row static">
+            <span class="path">{{ entry.path }}</span>
+            @if (entry.kind === 'untracked' && entry.isDirectory) {
+              <span class="badge dir">dir</span>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+  }
+}
