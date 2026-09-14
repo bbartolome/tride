@@ -1,0 +1,33 @@
+@if (dialog.request(); as req) {
+  <div class="confirm-backdrop">
+    <div class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <h2 id="confirm-dialog-title">{{ req.title }}</h2>
+      <p class="body">{{ req.body }}</p>
+      <label class="input-label" for="confirm-dialog-input">
+        Type <strong>{{ req.requiredText }}</strong> to confirm
+      </label>
+      <input
+        id="confirm-dialog-input"
+        class="confirm-input"
+        type="text"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        [ngModel]="dialog.inputValue()"
+        (ngModelChange)="dialog.setInput($event)"
+      />
+      <div class="actions">
+        <button type="button" class="cancel" (click)="dialog.cancel()">Cancel</button>
+        <button
+          type="button"
+          class="confirm"
+          [disabled]="!dialog.canConfirm()"
+          (click)="dialog.confirm()"
+        >
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+}

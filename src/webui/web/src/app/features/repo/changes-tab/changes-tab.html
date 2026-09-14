@@ -8,6 +8,37 @@
 } @else if (isEmpty()) {
   <app-empty-state message="No changes — working tree clean." />
 } @else {
+  @if (actionError(); as aerr) {
+    <p class="action-error" role="alert">{{ aerr.message }}</p>
+  }
+
+  <div class="bulk-actions">
+    <button type="button" [disabled]="actionBusy()" (click)="stageAll()">Stage all</button>
+    <button
+      type="button"
+      [disabled]="actionBusy() || selectedUnstagedPaths().length === 0"
+      (click)="stageSelected()"
+    >
+      Stage selected ({{ selectedUnstagedPaths().length }})
+    </button>
+    <button type="button" [disabled]="actionBusy()" (click)="unstageAll()">Unstage all</button>
+    <button
+      type="button"
+      [disabled]="actionBusy() || selectedStagedPaths().length === 0"
+      (click)="unstageSelected()"
+    >
+      Unstage selected ({{ selectedStagedPaths().length }})
+    </button>
+    <button
+      type="button"
+      class="danger"
+      [disabled]="actionBusy() || selectedAnyPaths().length === 0"
+      (click)="discardSelected()"
+    >
+      Discard selected
+    </button>
+  </div>
+
   @if (conflicts().length > 0) {
     <section class="change-section conflicts">
       <h2>Conflicts</h2>
@@ -30,6 +61,14 @@
       <ul class="entry-list">
         @for (entry of staged(); track entry.path) {
           <li>
+            <label class="select">
+              <input
+                type="checkbox"
+                [attr.aria-label]="'Select ' + entry.path"
+                [checked]="isSelected('staged', entry.path)"
+                (change)="toggleSelected('staged', entry.path)"
+              />
+            </label>
             <a class="entry-row" [routerLink]="diffLink()" [queryParams]="diffQuery(entry, true)">
               @if (entry.kind === 'renamed') {
                 <span class="path">
@@ -53,6 +92,14 @@
       <ul class="entry-list">
         @for (entry of unstaged(); track entry.path) {
           <li>
+            <label class="select">
+              <input
+                type="checkbox"
+                [attr.aria-label]="'Select ' + entry.path"
+                [checked]="isSelected('unstaged', entry.path)"
+                (change)="toggleSelected('unstaged', entry.path)"
+              />
+            </label>
             <a class="entry-row" [routerLink]="diffLink()" [queryParams]="diffQuery(entry, false)">
               @if (entry.kind === 'renamed') {
                 <span class="path">
@@ -76,6 +123,14 @@
       <ul class="entry-list">
         @for (entry of untracked(); track entry.path) {
           <li class="entry-row static">
+            <label class="select">
+              <input
+                type="checkbox"
+                [attr.aria-label]="'Select ' + entry.path"
+                [checked]="isSelected('untracked', entry.path)"
+                (change)="toggleSelected('untracked', entry.path)"
+              />
+            </label>
             <span class="path">{{ entry.path }}</span>
             @if (entry.kind === 'untracked' && entry.isDirectory) {
               <span class="badge dir">dir</span>
@@ -85,4 +140,27 @@
       </ul>
     </section>
   }
+
+  <section class="commit-form">
+    <h2>Commit</h2>
+    <label for="commit-message">Message</label>
+    <textarea
+      id="commit-message"
+      rows="3"
+      [value]="commitMessage()"
+      (input)="onMessageInput($event)"
+    ></textarea>
+    <label class="checkbox">
+      <input type="checkbox" [checked]="amend()" (change)="onAmendChange($event)" />
+      Amend previous commit
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" [checked]="signoff()" (change)="onSignoffChange($event)" />
+      Signoff
+    </label>
+    @if (commitError(); as cerr) {
+      <p class="commit-error" role="alert">{{ cerr.message }}</p>
+    }
+    <button type="button" [disabled]="!canCommit()" (click)="submitCommit()">Commit</button>
+  </section>
 }

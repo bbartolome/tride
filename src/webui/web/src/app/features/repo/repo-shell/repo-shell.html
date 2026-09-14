@@ -27,6 +27,42 @@
   </button>
 </header>
 
+<div class="remote-toolbar">
+  <button type="button" [disabled]="remoteBusy() !== null" (click)="fetch()">Fetch</button>
+  <button type="button" [disabled]="remoteBusy() !== null" (click)="pull()">Pull</button>
+  <button type="button" [disabled]="remoteBusy() !== null" (click)="push()">Push</button>
+  <button
+    type="button"
+    class="danger"
+    [disabled]="remoteBusy() !== null"
+    (click)="forcePush()"
+  >
+    Force push
+  </button>
+</div>
+
+@if (remoteAuthRequired()) {
+  <div class="auth-required" role="alert">
+    <p class="title">Git authentication needed</p>
+    <p class="body">
+      The remote rejected this operation's credentials — a passphrase-protected SSH
+      key or a missing credential helper is the expected reason, not a bug. Open a
+      terminal in this repo to authenticate (SSH agent, credential helper, or
+      <code>gh auth login</code>), then retry.
+    </p>
+    <button
+      type="button"
+      class="open-terminal"
+      [disabled]="terminalBusy()"
+      (click)="openTerminalHere()"
+    >
+      ⌨️ Open a terminal in this repo
+    </button>
+  </div>
+} @else if (remoteError(); as rerr) {
+  <p class="remote-error" role="alert">{{ rerr.message }}</p>
+}
+
 <nav class="tab-bar" aria-label="Repo sections">
   @for (tab of tabs; track tab.id) {
     <button
@@ -47,13 +83,13 @@
       <app-changes-tab [repo]="repo()" />
     }
     @case ('branches') {
-      <div class="tab-placeholder branches">Branches — coming soon.</div>
+      <app-branches-tab [repo]="repo()" />
     }
     @case ('log') {
-      <div class="tab-placeholder log">Log — coming soon.</div>
+      <app-log-tab [repo]="repo()" />
     }
     @case ('stash') {
-      <div class="tab-placeholder stash">Stash — coming soon.</div>
+      <app-stash-tab [repo]="repo()" />
     }
   }
 </div>

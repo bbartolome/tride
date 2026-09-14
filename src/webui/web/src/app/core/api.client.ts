@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { DISCARD_CONFIRM_TEXT } from './confirm-literals';
 import {
   BranchListResult,
   CommitResult,
@@ -149,10 +150,13 @@ export class ApiClient {
   }
 
   gitDiscard(repo: string, paths: string[]): Observable<OkResponse> {
+    // `confirm` must equal the server's `DISCARD_CONFIRM_LITERAL` exactly
+    // (F89) — imported from `confirm-literals.ts` rather than hardcoded so
+    // a server-side rename shows up here as a compile-time/spec failure.
     return this.mutate<OkResponse>('post', '/api/git/discard', {
       repo,
       paths,
-      confirm: 'discard',
+      confirm: DISCARD_CONFIRM_TEXT,
     });
   }
 

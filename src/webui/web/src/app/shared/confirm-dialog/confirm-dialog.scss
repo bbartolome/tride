@@ -1,0 +1,75 @@
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--backdrop, rgb(0 0 0 / 45%));
+}
+
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  width: 100%;
+  max-width: 26rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  background: var(--bg, #fff);
+  color: inherit;
+
+  h2 {
+    margin: 0;
+    font-size: 1.0625rem;
+  }
+}
+
+.body {
+  margin: 0;
+  color: var(--muted, #666);
+  font-size: 0.9375rem;
+  white-space: pre-line;
+}
+
+.input-label {
+  font-size: 0.8125rem;
+  color: var(--muted, #666);
+}
+
+.confirm-input {
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+}
+
+.cancel,
+.confirm {
+  min-height: 44px;
+  padding: 0 1rem;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+}
+
+.confirm {
+  border-color: var(--badge-danger-fg, #a0281a);
+  color: var(--badge-danger-fg, #a0281a);
+
+  &:disabled {
+    opacity: 0.4;
+  }
+}

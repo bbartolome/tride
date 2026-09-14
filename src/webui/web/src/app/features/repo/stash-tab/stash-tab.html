@@ -1,0 +1,58 @@
+@if (status() === 'error') {
+  <app-empty-state
+    [message]="error()?.message ?? 'Failed to load the stash.'"
+    [retry]="reload"
+  />
+} @else {
+  @if (actionError(); as aerr) {
+    <p class="action-error" role="alert">{{ aerr.message }}</p>
+  }
+
+  <section class="push-form">
+    <h2>Stash changes</h2>
+    <label for="stash-message">Message (optional)</label>
+    <input
+      id="stash-message"
+      type="text"
+      autocomplete="off"
+      [value]="pushMessage()"
+      (input)="onPushMessageInput($event)"
+    />
+    <label class="checkbox">
+      <input
+        type="checkbox"
+        [checked]="includeUntracked()"
+        (change)="onIncludeUntrackedChange($event)"
+      />
+      Include untracked files
+    </label>
+    <button type="button" [disabled]="actionBusy()" (click)="push()">Stash</button>
+  </section>
+
+  @if (status() === 'loading' && entries().length === 0) {
+    <p class="loading">Loading stash…</p>
+  } @else if (entries().length === 0) {
+    <app-empty-state message="No stash entries." />
+  } @else {
+    <ul class="stash-list">
+      @for (entry of entries(); track entry.ref) {
+        <li class="stash-row">
+          <div class="stash-main">
+            <span class="ref">{{ entry.ref }}</span>
+            <span class="message">{{ entry.message }}</span>
+            <span class="date">{{ entry.date }}</span>
+          </div>
+          <div class="stash-actions">
+            <button type="button" [disabled]="actionBusy()" (click)="apply(entry.ref)">
+              Apply
+            </button>
+            <button type="button" [disabled]="actionBusy()" (click)="pop(entry.ref)">Pop</button>
+            <button type="button" class="danger" [disabled]="actionBusy()" (click)="drop(entry.ref)">
+              Drop
+            </button>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+}

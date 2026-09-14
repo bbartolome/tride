@@ -4,6 +4,43 @@
   color: var(--muted, #666);
 }
 
+.action-error,
+.commit-error {
+  margin: 0 1rem 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
+  background: var(--badge-danger-bg, #fbe1e0);
+  color: var(--badge-danger-fg, #a0281a);
+  font-size: 0.875rem;
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0 1rem 1rem;
+
+  button {
+    min-height: 44px;
+    padding: 0 0.75rem;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.8125rem;
+
+    &:disabled {
+      opacity: 0.4;
+    }
+
+    &.danger {
+      border-color: var(--badge-danger-fg, #a0281a);
+      color: var(--badge-danger-fg, #a0281a);
+    }
+  }
+}
+
 .change-section {
   padding: 0 1rem 1rem;
 
@@ -23,10 +60,26 @@
   margin: 0;
   padding: 0;
   list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+}
+
+.select {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .entry-row {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 0.5rem;
   min-height: 44px;
@@ -79,4 +132,58 @@
 
 .conflicts h2 {
   color: var(--badge-danger-fg, #a0281a);
+}
+
+.commit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-top: 1px solid var(--border, #ddd);
+
+  h2 {
+    margin: 0 0 0.25rem;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted, #666);
+  }
+
+  label:not(.checkbox) {
+    font-size: 0.8125rem;
+    color: var(--muted, #666);
+  }
+
+  textarea {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 8px;
+    background: var(--bg, #fff);
+    color: inherit;
+    font: inherit;
+    resize: vertical;
+  }
+
+  .checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    font-size: 0.9375rem;
+  }
+
+  button {
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0 1.25rem;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+
+    &:disabled {
+      opacity: 0.4;
+    }
+  }
 }

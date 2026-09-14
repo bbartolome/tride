@@ -8,11 +8,16 @@ import {
   signal,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
 import { ApiClient } from '../../../core/api.client';
+import { FORCE_PUSH_CONFIRM_TEXT } from '../../../core/confirm-literals';
 import { ApiError } from '../../../core/error.interceptor';
 import { GitStatusResult } from '../../../core/api.types';
+import { ConfirmDialogService } from '../../../shared/confirm-dialog/confirm-dialog.service';
+import { BranchesTab } from '../branches-tab/branches-tab';
 import { ChangesTab } from '../changes-tab/changes-tab';
+import { LogTab } from '../log-tab/log-tab';
+import { StashTab } from '../stash-tab/stash-tab';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -25,17 +30,35 @@ const TABS: { id: RepoTab; label: string }[] = [
   { id: 'stash', label: 'Stash' },
 ];
 
+type RemoteActionKind = 'fetch' | 'pull' | 'push' | 'force-push';
+
 /**
  * `/repo/<repo path>` (`repoMatcher`, F159) — the repo shell: a header
- * (repo name, branch, ahead/behind) plus a four-tab bar. Only **Changes**
- * has real content in this task (T22); Branches / Log / Stash render as
- * existing-but-empty tabs so T23 can drop content into them without
- * restructuring this shell.
+ * (repo name, branch, ahead/behind), a fetch/pull/push toolbar, and a
+ * four-tab bar (Changes/Branches/Log/Stash — all four have real content
+ * as of T23, F171).
  *
  * The header's branch/ahead/behind figures come from `GET /git/status`
  * (the same call `ChangesTab` makes independently for its own entries) —
  * each component owns its own data the way `ReposPage`/`BrowsePage` do,
  * rather than threading state down through inputs.
+ *
+ * **Remote actions (fetch/pull/push).** `GIT_AUTH_REQUIRED` (502) is
+ * rendered as its OWN first-class state (`remoteAuthRequired`), never
+ * folded into the generic `remoteError` banner: a passphrase-protected
+ * key or a missing credential helper is the expected case for this app
+ * (there is no UI for entering credentials, by design — plan.md), not an
+ * exceptional one, so it gets a one-tap "Open a terminal in this repo"
+ * button (reusing `openTerminalHere`) instead of a dead-end error toast.
+ * This is deliberately distinct from the LOGIN `AUTH_REQUIRED` 401
+ * (`SessionStore`/`meGuard`) — same-sounding code, unrelated meaning
+ * (F100/F101).
+ *
+ * Force push requires the typed confirmation dialog
+ * (`FORCE_PUSH_CONFIRM_TEXT`, mirrored from the server, F89) before the
+ * request is ever sent; the server always runs it as
+ * `--force-with-lease --force-if-includes` — there is no plain `--force`
+ * path anywhere in this app.
  *
  * The sticky "Open terminal here" button is the designed escape hatch
  * (plan.md) for merge/rebase/conflict work the API deliberately does not
@@ -44,13 +67,14 @@ const TABS: { id: RepoTab; label: string }[] = [
 @Component({
   selector: 'app-repo-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ChangesTab],
+  imports: [ChangesTab, BranchesTab, LogTab, StashTab],
   templateUrl: './repo-shell.html',
   styleUrl: './repo-shell.scss',
 })
 export class RepoShell {
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
+  private readonly confirmDialog = inject(ConfirmDialogService);
 
   readonly repo = input.required<string>();
 
@@ -69,6 +93,14 @@ export class RepoShell {
   });
 
   protected readonly terminalBusy = signal(false);
+
+  protected readonly remoteBusy = signal<RemoteActionKind | null>(null);
+  protected readonly remoteError = signal<ApiError | null>(null);
+  /** True only for a 502 `GIT_AUTH_REQUIRED` — every other remote failure
+   * renders through `remoteError` instead. */
+  protected readonly remoteAuthRequired = computed(
+    () => this.remoteError()?.code === 'GIT_AUTH_REQUIRED',
+  );
 
   constructor() {
     effect(() => {
@@ -91,6 +123,52 @@ export class RepoShell {
       this.error.set(err as ApiError);
     } finally {
       this.terminalBusy.set(false);
+    }
+  }
+
+  protected async fetch(): Promise<void> {
+    await this.runRemoteAction('fetch', () => this.api.gitFetch(this.repo()));
+  }
+
+  protected async pull(): Promise<void> {
+    await this.runRemoteAction('pull', () => this.api.gitPull(this.repo()));
+  }
+
+  protected async push(): Promise<void> {
+    await this.runRemoteAction('push', () => this.api.gitPush(this.repo()));
+  }
+
+  protected async forcePush(): Promise<void> {
+    // Typed confirmation BEFORE the request is ever sent — mirrors the
+    // server's own gate (F89). The server always runs this as
+    // `--force-with-lease --force-if-includes`; there is no plain
+    // `--force` code path to opt into.
+    const confirmed = await this.confirmDialog.open({
+      title: 'Force push?',
+      body: `This force-pushes "${this.repoName()}" to its upstream, overwriting the remote branch's history to match your local branch (using --force-with-lease, so it fails safely if the remote moved since your last fetch). This cannot be undone on the remote.`,
+      requiredText: FORCE_PUSH_CONFIRM_TEXT,
+    });
+    if (!confirmed) {
+      return;
+    }
+    await this.runRemoteAction('force-push', () =>
+      this.api.gitPush(this.repo(), { force: true, confirm: FORCE_PUSH_CONFIRM_TEXT }),
+    );
+  }
+
+  private async runRemoteAction(
+    kind: RemoteActionKind,
+    action: () => Observable<unknown>,
+  ): Promise<void> {
+    this.remoteBusy.set(kind);
+    this.remoteError.set(null);
+    try {
+      await firstValueFrom(action());
+      await this.load(this.repo());
+    } catch (err) {
+      this.remoteError.set(err as ApiError);
+    } finally {
+      this.remoteBusy.set(null);
     }
   }
 

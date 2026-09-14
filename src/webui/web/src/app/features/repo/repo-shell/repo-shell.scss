@@ -58,6 +58,80 @@
   white-space: nowrap;
 }
 
+.remote-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--border, #ddd);
+
+  button {
+    min-height: 44px;
+    padding: 0 0.875rem;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.8125rem;
+
+    &:disabled {
+      opacity: 0.4;
+    }
+
+    &.danger {
+      border-color: var(--badge-danger-fg, #a0281a);
+      color: var(--badge-danger-fg, #a0281a);
+    }
+  }
+}
+
+.auth-required {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--badge-warn-bg, #fff2cc);
+  color: var(--badge-warn-fg, #7a5c00);
+
+  .title {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .body {
+    margin: 0;
+    font-size: 0.875rem;
+
+    code {
+      font-family: ui-monospace, monospace;
+    }
+  }
+
+  .open-terminal {
+    align-self: flex-start;
+    min-height: 44px;
+    padding: 0 1rem;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+
+    &:disabled {
+      opacity: 0.4;
+    }
+  }
+}
+
+.remote-error {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: var(--badge-danger-bg, #fbe1e0);
+  color: var(--badge-danger-fg, #a0281a);
+  font-size: 0.875rem;
+}
+
 .tab-bar {
   position: sticky;
   top: 72px;

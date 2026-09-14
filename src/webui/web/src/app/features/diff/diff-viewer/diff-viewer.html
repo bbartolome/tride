@@ -20,31 +20,5 @@
 } @else if (hunks().length === 0) {
   <app-empty-state message="No differences." />
 } @else {
-  <div class="diff">
-    @for (hunk of hunks(); track $index) {
-      <section class="hunk">
-        <button
-          type="button"
-          class="hunk-header"
-          [attr.aria-expanded]="!isCollapsed($index)"
-          (click)="toggleHunk($index)"
-        >
-          <span class="chevron" [class.collapsed]="isCollapsed($index)" aria-hidden="true">▾</span>
-          <span class="hunk-text">{{ hunk.header }}</span>
-        </button>
-        @if (!isCollapsed($index)) {
-          <div class="hunk-lines">
-            @for (line of hunk.lines; track $index) {
-              <div class="line" [class.add]="line.type === 'add'" [class.del]="line.type === 'del'">
-                <span class="marker" aria-hidden="true">{{
-                  line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '
-                }}</span
-                ><span class="text">{{ line.text }}</span>
-              </div>
-            }
-          </div>
-        }
-      </section>
-    }
-  </div>
+  <app-hunk-list [hunks]="hunks()" />
 }

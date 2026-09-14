@@ -1,0 +1,48 @@
+@if (selectedSha(); as sha) {
+  <header class="detail-toolbar">
+    <button type="button" class="back" (click)="closeDetail()">‹ Back to log</button>
+  </header>
+  @if (detailStatus() === 'error') {
+    <app-empty-state [message]="detailError()?.message ?? 'Failed to load this commit.'" />
+  } @else if (detailStatus() === 'loading') {
+    <p class="loading">Loading commit…</p>
+  } @else if (detailHeader(); as header) {
+    <div class="commit-header">
+      <p class="commit-sha">{{ header.sha }}</p>
+      <p class="commit-message">{{ header.message }}</p>
+      <p class="commit-meta">{{ header.author }} · {{ header.date }}</p>
+    </div>
+    <app-hunk-list [hunks]="detailHunks()" />
+  }
+} @else if (status() === 'error') {
+  <app-empty-state
+    [message]="error()?.message ?? 'Failed to load the log.'"
+    [retry]="reload"
+  />
+} @else if (status() === 'loading' && entries().length === 0) {
+  <p class="loading">Loading log…</p>
+} @else if (entries().length === 0) {
+  <app-empty-state message="No commits yet." />
+} @else {
+  <ul class="commit-list">
+    @for (entry of entries(); track entry.sha) {
+      <li>
+        <button type="button" class="commit-row" (click)="selectCommit(entry)">
+          <span class="sha">{{ shortSha(entry.sha) }}</span>
+          <span class="summary">{{ firstLine(entry.message) }}</span>
+          <span class="meta">{{ entry.author }} · {{ entry.date }}</span>
+        </button>
+      </li>
+    }
+  </ul>
+  @if (hasMore()) {
+    <button
+      type="button"
+      class="load-more"
+      [disabled]="status() === 'loading'"
+      (click)="loadMore()"
+    >
+      Load more
+    </button>
+  }
+}

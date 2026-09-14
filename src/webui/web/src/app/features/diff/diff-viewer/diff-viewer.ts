@@ -13,6 +13,7 @@ import { ApiClient } from '../../../core/api.client';
 import { ApiError } from '../../../core/error.interceptor';
 import { Hunk, parseUnifiedDiff } from '../../../core/diff-parser';
 import { EmptyState } from '../../../shared/empty-state/empty-state';
+import { HunkList } from '../../../shared/hunk-list/hunk-list';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -34,7 +35,7 @@ const DEFAULT_CONTEXT = 3;
 @Component({
   selector: 'app-diff-viewer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EmptyState],
+  imports: [RouterLink, EmptyState, HunkList],
   templateUrl: './diff-viewer.html',
   styleUrl: './diff-viewer.scss',
 })
@@ -58,9 +59,6 @@ export class DiffViewer {
     return text === null ? [] : parseUnifiedDiff(text);
   });
 
-  /** Indices of collapsed hunks; absent = expanded. */
-  protected readonly collapsedHunks = signal<ReadonlySet<number>>(new Set());
-
   /** Bound into `<app-empty-state [retry]>` — must stay a stable identity. */
   protected readonly reload = (): void => {
     void this.load();
@@ -83,20 +81,6 @@ export class DiffViewer {
     });
   }
 
-  protected isCollapsed(index: number): boolean {
-    return this.collapsedHunks().has(index);
-  }
-
-  protected toggleHunk(index: number): void {
-    const next = new Set(this.collapsedHunks());
-    if (next.has(index)) {
-      next.delete(index);
-    } else {
-      next.add(index);
-    }
-    this.collapsedHunks.set(next);
-  }
-
   private async load(): Promise<void> {
     const file = this.file();
     if (!file) {
@@ -112,7 +96,6 @@ export class DiffViewer {
     this.status.set('loading');
     this.binary.set(false);
     this.text.set(null);
-    this.collapsedHunks.set(new Set());
     try {
       const response = await firstValueFrom(
         this.api.gitDiff(this.repo(), {
