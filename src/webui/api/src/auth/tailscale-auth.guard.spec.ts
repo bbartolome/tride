@@ -60,7 +60,7 @@ describe('TailscaleAuthGuard', () => {
     }
   });
 
-  it('throws 403 NOT_ALLOWED when UsersService.isAllowed returns null', async () => {
+  it('throws 403 NOT_ALLOWED with the rejected login in detail when UsersService.isAllowed returns null', async () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
       createUsersService(null),
@@ -74,7 +74,26 @@ describe('TailscaleAuthGuard', () => {
       expect((err as ForbiddenException).getResponse()).toEqual({
         code: 'NOT_ALLOWED',
         message: 'Not allowed',
+        detail: { login: 'nobody@example.com' },
       });
+    }
+  });
+
+  it('reports the exact rejected login in detail.login, not a generic placeholder', async () => {
+    const guard = new TailscaleAuthGuard(
+      new Reflector(),
+      createUsersService(null),
+    );
+    const ctx = createContext({ login: 'someone-else@github' }, false);
+    try {
+      await guard.canActivate(ctx);
+      throw new Error('expected to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ForbiddenException);
+      const response = (err as ForbiddenException).getResponse() as {
+        detail?: { login?: string };
+      };
+      expect(response.detail).toEqual({ login: 'someone-else@github' });
     }
   });
 

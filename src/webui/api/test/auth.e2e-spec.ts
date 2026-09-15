@@ -70,12 +70,16 @@ describe('Auth (e2e)', () => {
     });
   });
 
-  it('GET /api/me with an unknown login -> 403 NOT_ALLOWED', async () => {
+  it('GET /api/me with an unknown login -> 403 NOT_ALLOWED with the rejected login in detail', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/me')
       .set('tailscale-user-login', 'nobody@example.com')
       .expect(403);
-    expect(res.body).toEqual({ code: 'NOT_ALLOWED', message: 'Not allowed' });
+    expect(res.body).toEqual({
+      code: 'NOT_ALLOWED',
+      message: 'Not allowed',
+      detail: { login: 'nobody@example.com' },
+    });
   });
 
   it('GET /api/me for a seeded admin -> 200 role=admin seeded=true', async () => {

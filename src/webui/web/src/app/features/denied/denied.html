@@ -1,0 +1,29 @@
+<div class="denied">
+  <h1>Access denied</h1>
+
+  @if (rejectedLogin(); as login) {
+    <p class="summary">
+      The Tailscale identity <strong class="login">{{ login }}</strong> is not on
+      this app's allowlist.
+    </p>
+  } @else {
+    <p class="summary">No Tailscale identity was presented with this request.</p>
+  }
+
+  @if (error(); as err) {
+    <p class="detail">{{ err.code }}: {{ err.message }}</p>
+  }
+
+  <section class="explain">
+    <h2>How access works here</h2>
+    <p>
+      Admins manage the allowlist from Admin → Users. Seeded admins — the logins
+      listed in <code>WEBUI_ADMIN_LOGINS</code> when this app started — can never
+      be removed or demoted; that's the lockout guard that keeps at least one admin
+      always able to fix the list. There is deliberately no read-only role: anyone
+      who can open a terminal here can already do anything, so a read-only tier
+      would be security theatre.
+    </p>
+    <p>Ask an admin to add your login to the allowlist, then reload this page.</p>
+  </section>
+</div>

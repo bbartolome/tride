@@ -42,6 +42,7 @@ export class TailscaleAuthGuard implements CanActivate {
       throw new ForbiddenException({
         code: ERROR_CODES.NOT_ALLOWED,
         message: 'Not allowed',
+        detail: { login: identity.login },
       });
     }
 

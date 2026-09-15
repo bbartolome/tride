@@ -1,11 +1,9 @@
 import { Routes } from '@angular/router';
+import { adminGuard } from './core/admin.guard';
 import { meGuard } from './core/me.guard';
 import { browseMatcher } from './features/browse/browse.matcher';
 import { repoDiffMatcher, repoMatcher } from './features/repo/repo.matcher';
 
-// T25+ adds the remaining route (admin). Repos and the directory browser
-// (T21), the repo shell + diff viewer (T22), terminals (T24), `/denied`,
-// and the catch-all exist so far.
 export const routes: Routes = [
   {
     path: '',
@@ -56,6 +54,25 @@ export const routes: Routes = [
         (m) => m.TerminalView,
       ),
     canActivate: [meGuard],
+  },
+  {
+    // `meGuard` here guarantees `SessionStore` is loaded before `adminGuard`
+    // (on the child route below) ever runs. The bottom-nav's `/admin` tab
+    // link lands on the bare parent, so the empty child redirects straight
+    // to `users` — there's nothing else under `/admin` yet.
+    path: 'admin',
+    canActivate: [meGuard],
+    children: [
+      { path: '', redirectTo: 'users', pathMatch: 'full' },
+      {
+        path: 'users',
+        canActivate: [adminGuard],
+        loadComponent: () =>
+          import('./features/admin/users-page/users-page').then(
+            (m) => m.UsersPage,
+          ),
+      },
+    ],
   },
   {
     path: 'denied',

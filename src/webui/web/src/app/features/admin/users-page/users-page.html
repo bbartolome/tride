@@ -1,0 +1,101 @@
+<header class="toolbar">
+  <h1>Users</h1>
+</header>
+
+@if (status() === 'error') {
+  <app-empty-state
+    [message]="error()?.message ?? 'Failed to load users.'"
+    [retry]="reload"
+  />
+} @else if (status() === 'loading' && users().length === 0) {
+  <p class="loading">Loading users…</p>
+} @else {
+  @if (actionError(); as aerr) {
+    <p class="action-error" role="alert">{{ aerr.message }}</p>
+  }
+
+  <section class="add-user">
+    <h2>Add user</h2>
+    <label for="new-login">Login</label>
+    <input
+      id="new-login"
+      type="text"
+      autocomplete="off"
+      placeholder="user@example.com"
+      [value]="newLogin()"
+      (input)="onNewLoginInput($event)"
+    />
+    <label for="new-role">Role</label>
+    <select id="new-role" [value]="newRole()" (change)="onNewRoleChange($event)">
+      <option value="user">user</option>
+      <option value="admin">admin</option>
+    </select>
+    @if (formError(); as ferr) {
+      <p class="form-error" role="alert">{{ ferr }}</p>
+    }
+    <button
+      type="button"
+      [disabled]="actionBusy() || newLogin().trim().length === 0"
+      (click)="addUser()"
+    >
+      Add
+    </button>
+  </section>
+
+  @if (users().length === 0) {
+    <app-empty-state message="No users on the allowlist." />
+  } @else {
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th scope="col">Login</th>
+          <th scope="col">Role</th>
+          <th scope="col">Seeded</th>
+          <th scope="col">Added by</th>
+          <th scope="col">Added at</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of users(); track row.login) {
+          <tr class="user-row" [class.self]="isSelf(row)">
+            <td class="login">
+              {{ row.login }}
+              @if (isSelf(row)) {
+                <span class="badge you">you</span>
+              }
+            </td>
+            <td class="role">
+              <button
+                type="button"
+                class="role-toggle"
+                [disabled]="actionBusy() || roleToggleDisabledReason(row) !== null"
+                [title]="roleToggleDisabledReason(row) ?? 'Toggle role'"
+                (click)="toggleRole(row)"
+              >
+                {{ row.role }}
+              </button>
+            </td>
+            <td class="seeded">{{ row.seeded ? 'yes' : 'no' }}</td>
+            <td class="added-by">{{ row.addedBy || '—' }}</td>
+            <td class="added-at">{{ row.addedAt || '—' }}</td>
+            <td class="actions">
+              <button
+                type="button"
+                class="remove danger"
+                [disabled]="actionBusy() || removeDisabledReason(row) !== null"
+                [title]="removeDisabledReason(row) ?? 'Remove'"
+                (click)="removeUser(row)"
+              >
+                Remove
+              </button>
+              @if (removeDisabledReason(row); as reason) {
+                <p class="disabled-reason">{{ reason }}</p>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+}

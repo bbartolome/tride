@@ -1,0 +1,42 @@
+.denied {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.summary {
+  font-size: 1rem;
+}
+
+.login {
+  word-break: break-word;
+}
+
+.detail {
+  margin-top: 0.25rem;
+  color: var(--muted, #666);
+  font-size: 0.875rem;
+}
+
+.explain {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border, #ddd);
+  text-align: left;
+
+  h2 {
+    margin: 0 0 0.5rem;
+    font-size: 0.9375rem;
+  }
+
+  p {
+    margin: 0 0 0.75rem;
+    color: var(--muted, #666);
+    font-size: 0.875rem;
+  }
+
+  code {
+    font-size: 0.8125rem;
+  }
+}
