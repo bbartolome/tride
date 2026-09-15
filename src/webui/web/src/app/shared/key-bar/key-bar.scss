@@ -1,0 +1,29 @@
+.key-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--key-bar-bg, #1e1e1e);
+  border-top: 1px solid var(--border, #333);
+}
+
+.key {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--key-border, #444);
+  border-radius: 6px;
+  background: var(--key-bg, #2a2a2a);
+  color: var(--key-fg, #eee);
+  font: inherit;
+  font-variant-ligatures: none;
+
+  &.ctrl.armed {
+    background: var(--key-armed-bg, #3a7bd5);
+    border-color: var(--key-armed-bg, #3a7bd5);
+    color: #fff;
+  }
+}

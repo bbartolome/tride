@@ -1,0 +1,53 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  flex: 0 0 auto;
+}
+
+.back {
+  color: inherit;
+  text-decoration: none;
+}
+
+.status {
+  margin-left: auto;
+  font-size: 0.875rem;
+  color: var(--muted, #666);
+
+  &.ready {
+    color: var(--clean-color, #5cb85c);
+  }
+
+  &.reconnecting,
+  &.connecting {
+    color: var(--badge-warn-fg, #7a5c00);
+  }
+
+  &.closed {
+    color: var(--badge-warn-fg, #b00);
+  }
+}
+
+.exit-banner {
+  display: block;
+  padding: 0.5rem 1rem;
+  background: var(--badge-warn-bg, #fff2cc);
+  color: var(--badge-warn-fg, #7a5c00);
+  font-size: 0.875rem;
+}
+
+.terminal-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: #1e1e1e;
+}

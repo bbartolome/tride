@@ -3,8 +3,8 @@ import { meGuard } from './core/me.guard';
 import { browseMatcher } from './features/browse/browse.matcher';
 import { repoDiffMatcher, repoMatcher } from './features/repo/repo.matcher';
 
-// T24+ add the remaining routes (terminals, admin). Repos and the
-// directory browser (T21), the repo shell + diff viewer (T22), `/denied`,
+// T25+ adds the remaining route (admin). Repos and the directory browser
+// (T21), the repo shell + diff viewer (T22), terminals (T24), `/denied`,
 // and the catch-all exist so far.
 export const routes: Routes = [
   {
@@ -38,6 +38,22 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/repo/repo-shell/repo-shell').then(
         (m) => m.RepoShell,
+      ),
+    canActivate: [meGuard],
+  },
+  {
+    path: 'terminals',
+    loadComponent: () =>
+      import('./features/terminal/terminals-list/terminals-list').then(
+        (m) => m.TerminalsList,
+      ),
+    canActivate: [meGuard],
+  },
+  {
+    path: 'terminal/:id',
+    loadComponent: () =>
+      import('./features/terminal/terminal-view/terminal-view').then(
+        (m) => m.TerminalView,
       ),
     canActivate: [meGuard],
   },

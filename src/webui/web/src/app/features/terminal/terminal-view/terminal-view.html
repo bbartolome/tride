@@ -1,0 +1,14 @@
+<header class="toolbar">
+  <a routerLink="/terminals" class="back">← Terminals</a>
+  <span class="status" [class]="connectionState()">{{ statusLabel() }}</span>
+</header>
+
+@if (exitCode() !== null) {
+  <!-- Deliberately `!== null`, not a bare truthy check — exit code 0
+       (success) must still show this banner. -->
+  <output class="exit-banner">Session exited (code {{ exitCode() }})</output>
+}
+
+<div class="terminal-host" #terminalHost></div>
+
+<app-key-bar (keyPress)="onKeyBarPress($event)" />
