@@ -126,10 +126,73 @@ fix_home_ownership() {
   done
 }
 
+# Config for the unprivileged web-ui process reaches it through a file, not
+# inline assignments on a runuser -c line: `runuser -l` resets the
+# environment, and quoting a comma-separated allowlist through two shells is
+# a footgun. write_webui_env is run as root before start_webui drops
+# privilege.
+write_webui_env() {
+  local env_file="/run/devcontainer/webui.env"
+  local admin_logins
+  admin_logins="$(printf '%s' "${WEBUI_ADMIN_LOGINS:-}" | tr -d '[:space:]')"
+
+  mkdir -p "$(dirname "$env_file")" || return 0
+
+  {
+    printf 'WEBUI_PORT=%s\n' "${WEBUI_PORT:-8088}"
+    printf 'WEBUI_HOST=%s\n' "127.0.0.1"
+    printf 'WEBUI_DIR=%s\n' "${WEBUI_DIR:-/opt/webui}"
+    printf 'WEBUI_STATE_DIR=%s\n' "${WEBUI_STATE_DIR:-/var/lib/webui}"
+    printf 'WEBUI_WORKSPACE_ROOT=%s\n' "${HOST_HOME_DIR}/${SSH_USER}/workspace"
+    printf 'WEBUI_ADMIN_LOGINS=%s\n' "$admin_logins"
+    printf 'WEBUI_TMUX_SOCKET=%s\n' "webui"
+  } > "$env_file" 2>/dev/null || { echo "cmd.sh: failed to write $env_file - web ui will not start" >&2; return 0; }
+
+  chmod 644 "$env_file" 2>/dev/null || true
+
+  return 0
+}
+
+# Starts the Nest web-ui API under the unprivileged SSH_USER, supervised by
+# webui-run.sh so a crash there never brings down sshd or the container.
+# Must be incapable of returning nonzero: this runs under set -e, and any
+# failure here must not prevent sshd from starting.
+start_webui() {
+  if [ "${WEBUI_ENABLED:-true}" != "true" ]; then
+    echo "cmd.sh: WEBUI_ENABLED is not true - skipping web ui" >&2
+    return 0
+  fi
+
+  local webui_dir="${WEBUI_DIR:-/opt/webui}"
+  local state_dir="${WEBUI_STATE_DIR:-/var/lib/webui}"
+
+  if [ ! -f "$webui_dir/api/dist/main.js" ]; then
+    echo "cmd.sh: $webui_dir/api/dist/main.js not found (possible bind-mount override of $webui_dir without a build) - skipping web ui" >&2
+    return 0
+  fi
+
+  write_webui_env
+
+  mkdir -p "$state_dir" 2>/dev/null || { echo "cmd.sh: could not create $state_dir - skipping web ui" >&2; return 0; }
+  chown "$SSH_USER:$SSH_USER" "$state_dir" 2>/dev/null || true
+  chmod 700 "$state_dir" 2>/dev/null || true
+
+  # `runuser -l` (not su) gives a login shell WITHOUT PAM auth, which is what
+  # sources the .bashrc devcontainer block (N_PREFIX, npm-global PATH,
+  # SDKMAN) into the api process and every PTY it later spawns. stdout is
+  # reserved for the SETUP=true installer script on the host, so all output
+  # here is redirected to stderr; backgrounding with & is itself exempt from
+  # set -e.
+  runuser -l "$SSH_USER" -c /usr/local/bin/webui-run.sh >&2 2>&1 &
+
+  return 0
+}
+
 ensure_docker_group
 
 install_authorized_keys
 apply_password
 fix_home_ownership
+start_webui
 
 /usr/sbin/sshd -D
