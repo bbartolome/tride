@@ -43,6 +43,8 @@ jobs:
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /usr/local/lib/node_modules || true
+          docker image prune -af || true
           df -h /
 
       - name: Prepare
@@ -160,3 +162,24 @@ jobs:
           image="${{ env.REGISTRY_IMAGE }}:${{ needs.merge.outputs.version }}"
           docker buildx imagetools inspect "$image" --raw \
             | jq -e '[.manifests[].platform.architecture] | index("amd64") and index("arm64")'
+
+      - name: Artifacts present
+        run: |
+          set -euo pipefail
+          image="${{ env.REGISTRY_IMAGE }}:${{ needs.merge.outputs.version }}"
+          docker run --rm "$image" bash -c "test -f /opt/webui/api/dist/main.js && test -f /opt/webui/web/browser/index.html"
+
+      # The ABI regression test: proves the native module loads under the exact
+      # interpreter webui-run.sh will use at runtime, not just under whatever
+      # `node` happens to resolve to in PATH.
+      - name: Native module loads
+        run: |
+          set -euo pipefail
+          image="${{ env.REGISTRY_IMAGE }}:${{ needs.merge.outputs.version }}"
+          docker run --rm "$image" bash -c '"$(cat /opt/webui/.node-bin)" -e "require('"'"'/opt/webui/api/node_modules/@lydell/node-pty'"'"')"'
+
+      - name: tmux present
+        run: |
+          set -euo pipefail
+          image="${{ env.REGISTRY_IMAGE }}:${{ needs.merge.outputs.version }}"
+          docker run --rm "$image" tmux -V
