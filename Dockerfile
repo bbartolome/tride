@@ -1,4 +1,4 @@
-FROM ubuntu:noble
+FROM ubuntu:noble AS base
 
 # Avoid prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -75,9 +75,60 @@ RUN chgrp -R sdkman $SDKMAN_DIR && chmod -R g+rwX $SDKMAN_DIR
 RUN printf 'export SDKMAN_DIR=/opt/sdkman\n[[ -s "$SDKMAN_DIR/bin/sdkman-init.sh" ]] && source "$SDKMAN_DIR/bin/sdkman-init.sh"\n' \
     > /etc/profile.d/sdkman.sh
 
+# tmux for the web UI's terminal sessions. Kept as its own leaf RUN, separate
+# from the apt-get install above, so it doesn't bust that cached layer.
+RUN apt-get update && apt-get install -y tmux \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Expose SSH port
 EXPOSE 22
 VOLUME ["/tmp"]
+
+##############################################################################
+# webui-build: compile the api (NestJS) and web (Angular) packages and
+# assemble the runtime bits the `final` stage needs under /opt/webui.
+##############################################################################
+FROM base AS webui-build
+
+WORKDIR /build
+
+# Manifests first, in their own layer per package, so an Angular dependency
+# bump doesn't invalidate the api's npm ci cache (and vice versa).
+COPY src/webui/api/package.json src/webui/api/package-lock.json ./api/
+RUN cd api && npm ci
+
+COPY src/webui/web/package.json src/webui/web/package-lock.json ./web/
+RUN cd web && npm ci
+
+# Now the sources, and build.
+COPY src/webui/api ./api
+RUN cd api && npm run build && npm prune --omit=dev
+
+COPY src/webui/web ./web
+RUN cd web && npm run build
+
+# Assemble /opt/webui.
+RUN mkdir -p /opt/webui/api /opt/webui/web \
+ && cp -r api/dist /opt/webui/api/dist \
+ && cp -r api/node_modules /opt/webui/api/node_modules \
+ && cp api/package.json /opt/webui/api/package.json \
+ && cp -r web/dist/web/browser /opt/webui/web/browser \
+ && node -p "require('fs').realpathSync(process.execPath)" > /opt/webui/.node-bin \
+ && node -p "process.versions.modules" > /opt/webui/.node-abi \
+ && "$(cat /opt/webui/.node-bin)" -e "require('/opt/webui/api/node_modules/@lydell/node-pty')" \
+ && chmod -R a+rX /opt/webui
+
+##############################################################################
+# final: the runtime image.
+##############################################################################
+FROM base AS final
+
+# Placed above ARG IMAGE_REF: /opt/webui doesn't depend on the image ref, so
+# this preserves the invariant that a changing ref only busts the cheap COPY
+# layers below it.
+COPY --from=webui-build /opt/webui /opt/webui
+
+COPY src/webui-tmux.conf /etc/devcontainer/webui-tmux.conf
 
 # Kept late on purpose: a changing IMAGE_REF then only busts the cheap COPY layers
 # below it, not the expensive apt/SDKMAN layers above.
@@ -86,7 +137,8 @@ ENV DEVCONTAINER_IMAGE=$IMAGE_REF
 
 COPY src/cmd.sh /usr/local/bin/cmd.sh
 COPY src/setup.sh /usr/local/bin/setup.sh
+COPY src/webui-run.sh /usr/local/bin/webui-run.sh
 COPY src/installer /opt/installer
-RUN chmod +x /usr/local/bin/cmd.sh /usr/local/bin/setup.sh
+RUN chmod +x /usr/local/bin/cmd.sh /usr/local/bin/setup.sh /usr/local/bin/webui-run.sh
 
 CMD ["/usr/local/bin/cmd.sh"]
