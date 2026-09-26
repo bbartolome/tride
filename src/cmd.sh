@@ -142,7 +142,7 @@ write_webui_env() {
     printf 'WEBUI_PORT=%s\n' "${WEBUI_PORT:-8088}"
     printf 'WEBUI_HOST=%s\n' "127.0.0.1"
     printf 'WEBUI_DIR=%s\n' "${WEBUI_DIR:-/opt/webui}"
-    printf 'WEBUI_STATE_DIR=%s\n' "${WEBUI_STATE_DIR:-/var/lib/webui}"
+    printf 'WEBUI_STATE_DIR=%s\n' "${WEBUI_STATE_DIR:-/var/lib/devcontainer-webui}"
     printf 'WEBUI_WORKSPACE_ROOT=%s\n' "${HOST_HOME_DIR}/${SSH_USER}/workspace"
     printf 'WEBUI_ADMIN_LOGINS=%s\n' "$admin_logins"
     printf 'WEBUI_TMUX_SOCKET=%s\n' "webui"
@@ -164,7 +164,7 @@ start_webui() {
   fi
 
   local webui_dir="${WEBUI_DIR:-/opt/webui}"
-  local state_dir="${WEBUI_STATE_DIR:-/var/lib/webui}"
+  local state_dir="${WEBUI_STATE_DIR:-/var/lib/devcontainer-webui}"
 
   if [ ! -f "$webui_dir/api/dist/main.js" ]; then
     echo "cmd.sh: $webui_dir/api/dist/main.js not found (possible bind-mount override of $webui_dir without a build) - skipping web ui" >&2

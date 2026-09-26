@@ -12,6 +12,7 @@ services:
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
       - TS_HOSTNAME=${TS_HOSTNAME}
+      - TS_SERVE_CONFIG=/config/serve.json
     # Published here, not on devcontainer, because devcontainer shares this
     # service's network namespace. Loopback-only: a fallback for when the
     # tailnet is unreachable.
@@ -23,6 +24,7 @@ services:
       - net_admin
     volumes:
       - ts-state:/var/lib/tailscale
+      - ./serve.json:/config/serve.json:ro
 
   devcontainer:
     build:
@@ -36,12 +38,21 @@ services:
     container_name: devcontainer
     restart: unless-stopped
     network_mode: "service:tailscale"
+    # cmd.sh is PID 1 and does not exec sshd, so it stays around as the
+    # parent of the daemonized tmux server the web UI spawns; init: true
+    # gives it tini so that server (and any other adopted child) gets reaped.
+    init: true
+    environment:
+      - WEBUI_ENABLED=${WEBUI_ENABLED:-true}
+      - WEBUI_ADMIN_LOGINS=${WEBUI_ADMIN_LOGINS:-}
+      - WEBUI_PORT=${WEBUI_PORT:-8088}
     volumes:
       - ${HOME}/.gitconfig:${HOST_HOME_DIR}/${SSH_USER}/.gitconfig
       - ${HOME}/.bashrc.ext:${HOST_HOME_DIR}/${SSH_USER}/.bashrc.ext
       - ${HOME}/.ssh:${HOST_HOME_DIR}/${SSH_USER}/.ssh
       - ${HOME}/.cline:${HOST_HOME_DIR}/${SSH_USER}/.cline
       - ${HOME}/.claude:${HOST_HOME_DIR}/${SSH_USER}/.claude
+      - ${HOME}/.config:${HOST_HOME_DIR}/${SSH_USER}/.config
       - ${HOME}/Cline:${HOST_HOME_DIR}/${SSH_USER}/Cline
       - ${HOME}/.vscode-server:${HOST_HOME_DIR}/${SSH_USER}/.vscode-server
       - ${HOME}/workspace:${HOST_HOME_DIR}/${SSH_USER}/workspace
@@ -49,7 +60,12 @@ services:
       # Consumed and truncated in place by cmd.sh on first start.
       - ./.sudopass:/run/devcontainer/sudopass
       - npm-global:${HOST_HOME_DIR}/${SSH_USER}/.npm-global
+      # Path must match cmd.sh's start_webui default for WEBUI_STATE_DIR
+      # (/var/lib/devcontainer-webui), which is also the API's own tested
+      # default in webui-config.service.ts — all three must stay in lockstep.
+      - webui-state:/var/lib/devcontainer-webui
 
 volumes:
   ts-state:
   npm-global:
+  webui-state:
