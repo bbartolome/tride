@@ -148,6 +148,19 @@ describe('BranchesTab', () => {
     expect(gitDeleteBranch).toHaveBeenCalledWith('my-repo', { name: 'feature/x', force: true });
   });
 
+  it('shows an empty state instead of the list when there are no local branches', async () => {
+    gitBranches.mockReturnValue(
+      of({ current: null, detached: false, local: [], remote: [] }),
+    );
+    const fixture = create();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.branch-section.local app-empty-state .message')?.textContent).toBe(
+      'No branches.',
+    );
+    expect(root.querySelector('.branch-section.local .branch-list')).toBeNull();
+  });
+
   it('shows a detached HEAD banner when detached', async () => {
     gitBranches.mockReturnValue(
       of({ ...BRANCHES, current: null, detached: true, detachedAt: 'abc1234' }),

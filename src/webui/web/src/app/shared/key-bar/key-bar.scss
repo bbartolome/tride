@@ -6,7 +6,10 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   background: var(--key-bar-bg, #1e1e1e);
-  border-top: 1px solid var(--border, #333);
+  // `--key-border`, not the general theme `--border` — this bar always
+  // sits on the always-dark terminal, in both light and dark app themes,
+  // so it must not pick up the light theme's border color once one exists.
+  border-top: 1px solid var(--key-border, #444);
 }
 
 .key {

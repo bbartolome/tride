@@ -1,3 +1,166 @@
 /* You can add global styles to this file, and also import other style files */
 @use '@xterm/xterm/css/xterm.css';
 
+// -----------------------------------------------------------------------
+// Theme tokens
+//
+// Every color used anywhere in the app (as `var(--x, <fallback>)`) has its
+// canonical definition here, on bare `:root`, for the light theme — never
+// only inside a media query, per the rule that a variable must resolve to
+// something even when neither `prefers-color-scheme` nor an explicit
+// `data-theme` applies.
+//
+// Dark mode has two paths that must both win over the light default:
+//  - OS-level preference: `@media (prefers-color-scheme: dark)`, guarded
+//    with `:root:not([data-theme="light"])` so an explicit light choice
+//    (if one is ever wired up via `data-theme`) is not clobbered by the
+//    media query.
+//  - An explicit choice: `:root[data-theme="dark"]`, repeating the same
+//    overrides unconditionally so it wins regardless of the OS setting.
+//
+// There is no in-app theme toggle yet (nothing sets `data-theme`), but the
+// selectors are written for when one exists rather than only for today.
+//
+// `--key-*` and `--key-bar-bg` are deliberately NOT overridden in dark
+// mode: the key bar always sits directly on the terminal, which is always
+// dark in both app themes (like a code editor's terminal pane), so those
+// tokens stay constant across both blocks.
+// -----------------------------------------------------------------------
+
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666666;
+  --border: #dddddd;
+  --accent: #1a4fa0;
+  --backdrop: rgb(0 0 0 / 45%);
+  --input-bg: #ffffff;
+
+  --nav-bg: #ffffff;
+  --nav-border: #dddddd;
+  --nav-fg: #555555;
+  --nav-fg-active: #1a73e8;
+
+  --badge-bg: #eeeeee;
+  --badge-fg: #444444;
+  --badge-info-bg: #e0ecff;
+  --badge-info-fg: #1a4fa0;
+  --badge-warn-bg: #fff2cc;
+  --badge-warn-fg: #7a5c00;
+  --badge-danger-bg: #fbe1e0;
+  --badge-danger-fg: #a0281a;
+
+  --clean-color: #5cb85c;
+  --dirty-color: #d9534f;
+
+  --diff-add-bg: #e6ffed;
+  --diff-add-fg: #22863a;
+  --diff-del-bg: #ffeef0;
+  --diff-del-fg: #b31d28;
+  --hunk-header-bg: #f4f4f4;
+
+  // Always-dark terminal chrome — constant across both themes.
+  --key-bar-bg: #1e1e1e;
+  --key-bg: #2a2a2a;
+  --key-border: #444444;
+  --key-fg: #eeeeee;
+  --key-armed-bg: #3a7bd5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #121212;
+    --fg: #e8e8e8;
+    --muted: #9a9a9a;
+    --border: #333333;
+    --accent: #4c8dff;
+    --backdrop: rgb(0 0 0 / 65%);
+    --input-bg: #1e1e1e;
+
+    --nav-bg: #1a1a1a;
+    --nav-border: #333333;
+    --nav-fg: #aaaaaa;
+    --nav-fg-active: #6fa8ff;
+
+    --badge-bg: #2a2a2a;
+    --badge-fg: #cccccc;
+    --badge-info-bg: #123a6b;
+    --badge-info-fg: #8fb8ff;
+    --badge-warn-bg: #4a3c00;
+    --badge-warn-fg: #e0b84d;
+    --badge-danger-bg: #4a1512;
+    --badge-danger-fg: #ff8a80;
+
+    --clean-color: #4cd964;
+    --dirty-color: #ff6b6b;
+
+    --diff-add-bg: #0d3321;
+    --diff-add-fg: #56d364;
+    --diff-del-bg: #3a1216;
+    --diff-del-fg: #ff7b72;
+    --hunk-header-bg: #1c1c1c;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #121212;
+  --fg: #e8e8e8;
+  --muted: #9a9a9a;
+  --border: #333333;
+  --accent: #4c8dff;
+  --backdrop: rgb(0 0 0 / 65%);
+  --input-bg: #1e1e1e;
+
+  --nav-bg: #1a1a1a;
+  --nav-border: #333333;
+  --nav-fg: #aaaaaa;
+  --nav-fg-active: #6fa8ff;
+
+  --badge-bg: #2a2a2a;
+  --badge-fg: #cccccc;
+  --badge-info-bg: #123a6b;
+  --badge-info-fg: #8fb8ff;
+  --badge-warn-bg: #4a3c00;
+  --badge-warn-fg: #e0b84d;
+  --badge-danger-bg: #4a1512;
+  --badge-danger-fg: #ff8a80;
+
+  --clean-color: #4cd964;
+  --dirty-color: #ff6b6b;
+
+  --diff-add-bg: #0d3321;
+  --diff-add-fg: #56d364;
+  --diff-del-bg: #3a1216;
+  --diff-del-fg: #ff7b72;
+  --hunk-header-bg: #1c1c1c;
+}
+
+// Minimal reset. There was previously none at all: the default UA
+// stylesheet's 8px `body` margin left a visible gap around the fixed
+// bottom-nav and every page's content, and nothing painted `--bg`/`--fg`
+// on the page itself, so a dark theme would have flipped component
+// surfaces (cards, dialogs) to dark while the base page stayed
+// browser-default white with black text.
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}

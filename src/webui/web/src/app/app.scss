@@ -1,10 +1,21 @@
 :host {
   display: block;
-  min-height: 100dvh;
+  // `100dvh`, not `100vh` — the dynamic viewport unit tracks Safari's
+  // collapsing/expanding URL bar, so this box never over- or
+  // under-reports the real visible height. It is a plain `height`
+  // (rather than `min-height`) so a page shorter than the viewport still
+  // fills it; a page with more content simply overflows the document as
+  // normal (no `overflow` is set here to clip it).
+  height: 100dvh;
 }
 
 .shell {
-  // Leaves room for the fixed bottom-nav (44px min-height + safe-area
-  // inset) so content is never rendered underneath it.
-  padding-bottom: calc(44px + env(safe-area-inset-bottom, 0));
+  box-sizing: border-box;
+  // Safe-area insets on every side, not just the bottom — the bottom one
+  // additionally reserves room for the fixed bottom-nav (44px min-height
+  // + inset) so content is never rendered underneath it; top/left/right
+  // matter in landscape, where a notch/Dynamic Island can sit to either
+  // side instead of the top.
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0)
+    calc(44px + env(safe-area-inset-bottom, 0)) env(safe-area-inset-left, 0);
 }

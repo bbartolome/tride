@@ -56,6 +56,7 @@ describe('Terminal WebSocket gateway (e2e)', () => {
   let tmuxTmpDir: string;
   let tmuxConfPath: string;
   let openSockets: WebSocket[];
+  let homeDir: string;
 
   let prevWorkspaceRoot: string | undefined;
   let prevAdminLogins: string | undefined;
@@ -63,6 +64,7 @@ describe('Terminal WebSocket gateway (e2e)', () => {
   let prevTmuxSocket: string | undefined;
   let prevTmuxConf: string | undefined;
   let prevTmuxTmpDir: string | undefined;
+  let prevHome: string | undefined;
 
   beforeEach(async () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), 'webui-ws-e2e-root-'));
@@ -76,12 +78,29 @@ describe('Terminal WebSocket gateway (e2e)', () => {
     tmuxConfPath = join(tmuxTmpDir, 'tmux.conf');
     writeFileSync(tmuxConfPath, 'set -g status off\n');
 
+    // Isolate HOME. The nonce round-trip test attaches a REAL login shell
+    // (F119: tmux's own login-shell semantics, deliberately unmodified here),
+    // and a login shell reads the real user's ~/.profile -> ~/.bashrc ->
+    // ~/.bashrc.ext chain. On a real devcontainer host that last file is
+    // personal and can do anything, including (as discovered) invoking
+    // `keychain --eval --agents ssh <key>`, which blocks on an interactive
+    // passphrase prompt whenever no agent is already unlocked in the
+    // session. That hung this exact test for 5s of real wall-clock time
+    // instead of failing fast, and made the suite's outcome depend on the
+    // ambient state of whichever machine happens to run it -- not a
+    // regression in the app, but a real hermeticity bug in this spec, found
+    // by an actual login-shell hang rather than an assumption. An isolated
+    // HOME with no rc files at all still exercises a genuine `-bash` login
+    // shell (PtyService's argv is unchanged); it just starts clean.
+    homeDir = mkdtempSync(join(tmpdir(), 'webui-ws-e2e-home-'));
+
     prevWorkspaceRoot = process.env.WEBUI_WORKSPACE_ROOT;
     prevAdminLogins = process.env.WEBUI_ADMIN_LOGINS;
     prevStateDir = process.env.WEBUI_STATE_DIR;
     prevTmuxSocket = process.env.WEBUI_TMUX_SOCKET;
     prevTmuxConf = process.env.WEBUI_TMUX_CONF;
     prevTmuxTmpDir = process.env.TMUX_TMPDIR;
+    prevHome = process.env.HOME;
 
     process.env.WEBUI_WORKSPACE_ROOT = workspaceRoot;
     process.env.WEBUI_ADMIN_LOGINS = SEEDED_LOGIN;
@@ -89,6 +108,7 @@ describe('Terminal WebSocket gateway (e2e)', () => {
     process.env.WEBUI_TMUX_SOCKET = tmuxSocket;
     process.env.WEBUI_TMUX_CONF = tmuxConfPath;
     process.env.TMUX_TMPDIR = tmuxTmpDir;
+    process.env.HOME = homeDir;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -162,10 +182,16 @@ describe('Terminal WebSocket gateway (e2e)', () => {
     } else {
       process.env.TMUX_TMPDIR = prevTmuxTmpDir;
     }
+    if (prevHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = prevHome;
+    }
 
     rmSync(stateDir, { recursive: true, force: true });
     rmSync(workspaceRoot, { recursive: true, force: true });
     rmSync(tmuxTmpDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   });
 
   // -----------------------------------------------------------------------

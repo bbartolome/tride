@@ -44,50 +44,54 @@
 
   <section class="branch-section local">
     <h2>Local</h2>
-    <ul class="branch-list">
-      @for (branch of b.local; track branch.name) {
-        <li class="branch-row" [class.current]="branch.name === b.current">
-          <div class="branch-main">
-            <span class="name">{{ branch.name }}</span>
-            @if (branch.name === b.current) {
-              <span class="badge current">current</span>
-            }
-            @if (branch.upstreamGone) {
-              <span class="badge gone">upstream gone</span>
-            }
-          </div>
-          <div class="branch-meta">
-            @if (branch.upstream) {
-              <span class="upstream">{{ branch.upstream }}</span>
-            }
-            @if (branch.ahead > 0) {
-              <span class="ahead">↑{{ branch.ahead }}</span>
-            }
-            @if (branch.behind > 0) {
-              <span class="behind">↓{{ branch.behind }}</span>
-            }
-          </div>
-          @if (branch.name !== b.current) {
-            <div class="branch-actions">
-              <button type="button" [disabled]="actionBusy()" (click)="checkout(branch.name)">
-                Checkout
-              </button>
-              <button type="button" [disabled]="actionBusy()" (click)="deleteBranch(branch.name)">
-                Delete
-              </button>
-              <button
-                type="button"
-                class="danger"
-                [disabled]="actionBusy()"
-                (click)="forceDeleteBranch(branch.name)"
-              >
-                Force delete
-              </button>
+    @if (b.local.length === 0) {
+      <app-empty-state message="No branches." />
+    } @else {
+      <ul class="branch-list">
+        @for (branch of b.local; track branch.name) {
+          <li class="branch-row" [class.current]="branch.name === b.current">
+            <div class="branch-main">
+              <span class="name">{{ branch.name }}</span>
+              @if (branch.name === b.current) {
+                <span class="badge current">current</span>
+              }
+              @if (branch.upstreamGone) {
+                <span class="badge gone">upstream gone</span>
+              }
             </div>
-          }
-        </li>
-      }
-    </ul>
+            <div class="branch-meta">
+              @if (branch.upstream) {
+                <span class="upstream">{{ branch.upstream }}</span>
+              }
+              @if (branch.ahead > 0) {
+                <span class="ahead">↑{{ branch.ahead }}</span>
+              }
+              @if (branch.behind > 0) {
+                <span class="behind">↓{{ branch.behind }}</span>
+              }
+            </div>
+            @if (branch.name !== b.current) {
+              <div class="branch-actions">
+                <button type="button" [disabled]="actionBusy()" (click)="checkout(branch.name)">
+                  Checkout
+                </button>
+                <button type="button" [disabled]="actionBusy()" (click)="deleteBranch(branch.name)">
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  class="danger"
+                  [disabled]="actionBusy()"
+                  (click)="forceDeleteBranch(branch.name)"
+                >
+                  Force delete
+                </button>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    }
   </section>
 
   @if (b.remote.length > 0) {
