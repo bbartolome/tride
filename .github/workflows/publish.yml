@@ -183,3 +183,90 @@ jobs:
           set -euo pipefail
           image="${{ env.REGISTRY_IMAGE }}:${{ needs.merge.outputs.version }}"
           docker run --rm "$image" tmux -V
+
+  # Exercises the auth matrix end to end against the thin per-user layer built
+  # on top of the just-published image. No tailnet is available here - the app
+  # only ever reads a plain Tailscale-User-Login header, so curl -H stands in
+  # for the tailnet-terminated header Tailscale Serve would normally add.
+  webui-e2e:
+    name: Web UI auth e2e
+    runs-on: ubuntu-24.04
+    needs: merge
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build per-user layer
+        run: |
+          set -euo pipefail
+          image="${{ env.REGISTRY_IMAGE }}:${{ needs.merge.outputs.version }}"
+          docker build -t dc-test --build-arg BASE_IMAGE="$image" --build-arg SSH_USER=runner --build-arg HOST_HOME_DIR=/home src/installer
+
+      # WEBUI_ADMIN_LOGINS seeds the allowlist (see src/cmd.sh's
+      # write_webui_env) so /api/me has a known-good identity to check against.
+      # No docker socket, authorized_keys or sudopass is provided - cmd.sh
+      # tolerates all three being absent, so the container still starts clean.
+      - name: Run container
+        run: |
+          set -euo pipefail
+          docker run -d --name dc-test -e WEBUI_ADMIN_LOGINS=admin@example.com dc-test
+
+      - name: Wait for API to become healthy
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if docker exec dc-test curl -fsS http://127.0.0.1:8088/healthz >/dev/null 2>&1; then
+              echo "healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "web ui never became healthy" >&2
+          docker logs dc-test || true
+          exit 1
+
+      - name: healthz responds 200
+        run: |
+          set -euo pipefail
+          status="$(docker exec dc-test curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/healthz)"
+          test "$status" = "200"
+
+      - name: No identity header is rejected as 401
+        run: |
+          set -euo pipefail
+          status="$(docker exec dc-test curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8088/api/me)"
+          test "$status" = "401"
+
+      - name: Seeded admin identity is accepted with role admin
+        run: |
+          set -euo pipefail
+          body="$(docker exec dc-test curl -s -H 'Tailscale-User-Login: admin@example.com' http://127.0.0.1:8088/api/me)"
+          echo "$body"
+          echo "$body" | grep -q '"role":"admin"'
+
+      - name: Unknown identity is rejected as 403
+        run: |
+          set -euo pipefail
+          status="$(docker exec dc-test curl -s -o /dev/null -w '%{http_code}' -H 'Tailscale-User-Login: nobody@example.com' http://127.0.0.1:8088/api/me)"
+          test "$status" = "403"
+
+      # Proves the bind behaviourally rather than by reading a socket table:
+      # `ss` is not in ubuntu:noble and iproute2 is not installed, so the
+      # obvious check would fail with "command not found" and be reported as
+      # a loopback violation. This tests the property that actually matters —
+      # the API answers inside the container but is unreachable from outside
+      # it, which is what keeps tailnet peers from bypassing Serve.
+      - name: API is bound to loopback only
+        run: |
+          set -euo pipefail
+          ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' dc-test)"
+          test -n "$ip"
+          docker exec dc-test curl -fsS http://127.0.0.1:8088/healthz >/dev/null
+          if curl -fsS --max-time 5 "http://$ip:8088/healthz" >/dev/null 2>&1; then
+            echo "web ui answered on $ip:8088 - it is NOT bound to loopback only" >&2
+            exit 1
+          fi
+          echo "reachable on 127.0.0.1 inside the container, unreachable on $ip - loopback bind confirmed"
+
+      - name: Clean up container
+        if: always()
+        run: docker rm -f dc-test || true
