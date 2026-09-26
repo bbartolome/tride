@@ -81,7 +81,7 @@ VOLUME ["/tmp"]
 
 # Kept late on purpose: a changing IMAGE_REF then only busts the cheap COPY layers
 # below it, not the expensive apt/SDKMAN layers above.
-ARG IMAGE_REF=bbartolome/devcontainer:latest
+ARG IMAGE_REF=bbartolome/tride:latest
 ENV DEVCONTAINER_IMAGE=$IMAGE_REF
 
 COPY src/cmd.sh /usr/local/bin/cmd.sh

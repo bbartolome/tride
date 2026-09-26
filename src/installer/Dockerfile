@@ -3,7 +3,7 @@
 # Everything here is host-specific - which user logs in, where their home lives -
 # so it cannot be baked into the image on Docker Hub. The heavy toolchain comes
 # from BASE_IMAGE; this layer builds in seconds.
-ARG BASE_IMAGE=bbartolome/devcontainer:latest
+ARG BASE_IMAGE=bbartolome/tride:latest
 FROM ${BASE_IMAGE}
 
 ARG SSH_USER=ubuntu

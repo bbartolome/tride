@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-IMAGE="${DEVCONTAINER_IMAGE:-bbartolome/devcontainer:latest}"
+IMAGE="${DEVCONTAINER_IMAGE:-bbartolome/tride:latest}"
 
 echo "devcontainer: emitting bootstrap script for ${IMAGE}" >&2
 

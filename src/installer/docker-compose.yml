@@ -31,7 +31,7 @@ services:
       args:
         SSH_USER: ${SSH_USER}
         HOST_HOME_DIR: ${HOST_HOME_DIR}
-        BASE_IMAGE: ${BASE_IMAGE:-bbartolome/devcontainer:latest}
+        BASE_IMAGE: ${BASE_IMAGE:-bbartolome/tride:latest}
     image: devcontainer
     container_name: devcontainer
     restart: unless-stopped

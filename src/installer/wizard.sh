@@ -65,7 +65,7 @@ default_tshost="$(env_get TS_HOSTNAME)"
 default_port="$(env_get SSH_PORT)";        [ -n "$default_port" ] || default_port="2222"
 default_base="${BASE_IMAGE:-}"
 [ -n "$default_base" ] || default_base="$(env_get BASE_IMAGE)"
-[ -n "$default_base" ] || default_base="bbartolome/devcontainer:latest"
+[ -n "$default_base" ] || default_base="bbartolome/tride:latest"
 
 ask SSH_USER      "Username inside the container" "$default_user"
 ask HOST_HOME_DIR "Parent directory for its home" "$default_homedir"

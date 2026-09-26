@@ -14,8 +14,8 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE: bbartolome/devcontainer
-  REGISTRY_IMAGE: docker.io/bbartolome/devcontainer
+  IMAGE: bbartolome/tride
+  REGISTRY_IMAGE: docker.io/bbartolome/tride
 
 permissions:
   contents: read

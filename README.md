@@ -11,7 +11,7 @@ new host is one command instead of a ~20 minute local build.
 
 ```bash
 mkdir -p ~/devcontainer && cd ~/devcontainer
-docker run --rm -e SETUP=true bbartolome/devcontainer | bash
+docker run --rm -e SETUP=true bbartolome/tride | bash
 ```
 
 That prints a bootstrap script and pipes it to your shell. The script extracts
@@ -28,7 +28,7 @@ The wizard asks for:
 | Parent directory for its home | `dirname $HOME` (`/Users` on macOS) | `.env` |
 | Tailscale hostname | `dev` | `.env` |
 | Local loopback SSH port | `2222` | `.env` |
-| Base image | `bbartolome/devcontainer:latest` | `.env` |
+| Base image | `bbartolome/tride:latest` | `.env` |
 | SSH key to authorize | pick from `~/.ssh/*.pub`, or generate one | `~/.ssh/authorized_keys` |
 | Account password | blank (account stays locked) | `.sudopass` (mode 0600) |
 | Tailscale auth key | — | `.secret` (mode 0600) |
@@ -67,7 +67,7 @@ The published image is deliberately user-agnostic — it cannot know your userna
 or where your home lives, so those cannot be baked in upstream.
 
 ```
-bbartolome/devcontainer          published by CI, all the slow tooling
+bbartolome/tride                 published by CI, all the slow tooling
         │
         └── installer/Dockerfile local, thin, seconds to build
                                  adds your user, home path, sudoers, .bashrc
