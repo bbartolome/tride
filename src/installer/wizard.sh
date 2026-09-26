@@ -52,6 +52,21 @@ confirm() { # confirm "prompt" "Y"|"N"  -> returns 0 for yes
   case "$__reply" in [yY]*) return 0 ;; *) return 1 ;; esac
 }
 
+# Emits a tailscale Serve config with two Web handler keys for the same
+# backend. "${TS_CERT_DOMAIN}" must reach the file LITERALLY - containerboot
+# (the tailscale image's entrypoint) substitutes it at runtime, not this
+# shell, so the format string is single-quoted. The second key is the bare
+# Tailscale hostname, substituted here: Serve matches on the request's Host
+# header, and a plain "http://<host>/" hit from inside the tailnet carries
+# Host: <hostname>, not the FQDN, so the FQDN-only key would never match it.
+# AllowFunnel is omitted on purpose - Funnel traffic carries no identity
+# headers, so turning it on would open an unauthenticated hole.
+write_serve_json() { # write_serve_json TS_HOSTNAME WEBUI_PORT OUT_FILE
+  local __host="$1" __port="$2" __out="$3"
+  printf '{\n  "TCP": {\n    "80": {\n      "HTTP": true\n    }\n  },\n  "Web": {\n    "${TS_CERT_DOMAIN}:80": {\n      "Handlers": {\n        "/": {\n          "Proxy": "http://127.0.0.1:%s"\n        }\n      }\n    },\n    "%s:80": {\n      "Handlers": {\n        "/": {\n          "Proxy": "http://127.0.0.1:%s"\n        }\n      }\n    }\n  }\n}\n' \
+    "$__port" "$__host" "$__port" > "$__out"
+}
+
 # ------------------------------------------------------------------ config ---
 
 printf '\n== devcontainer setup ==\n\n' >&2
@@ -61,7 +76,7 @@ printf '\n' >&2
 default_user="$(env_get SSH_USER)";        [ -n "$default_user" ] || default_user="$(id -un)"
 default_homedir="$(env_get HOST_HOME_DIR)"; [ -n "$default_homedir" ] || default_homedir="$(dirname "$HOME")"
 default_tshost="$(env_get TS_HOSTNAME)"
-[ -n "$default_tshost" ] || default_tshost="dev"
+[ -n "$default_tshost" ] || default_tshost="tride"
 default_port="$(env_get SSH_PORT)";        [ -n "$default_port" ] || default_port="2222"
 default_base="${BASE_IMAGE:-}"
 [ -n "$default_base" ] || default_base="$(env_get BASE_IMAGE)"
@@ -149,6 +164,26 @@ fi
 # Only offered when absent, so an existing entry is never rewritten.
 if [ -f "$HOME/.ssh/config" ] && grep -qE '^[[:space:]]*Host[[:space:]]+devcontainer[[:space:]]*$' "$HOME/.ssh/config"; then
   note "~/.ssh/config already defines 'Host devcontainer' - leaving it alone"
+  # Drift check only - never rewrite a user's ssh config silently. Finds the
+  # first HostName line inside the 'Host devcontainer' block and compares it
+  # against the hostname just entered.
+  existing_hostname_line="$(awk '
+    /^[[:space:]]*Host[[:space:]]+/ {
+      inblock = ($0 ~ /^[[:space:]]*Host[[:space:]]+devcontainer[[:space:]]*$/)
+    }
+    inblock && !found && /^[[:space:]]*HostName[[:space:]]+/ {
+      print NR ":" $0
+      found = 1
+    }
+  ' "$HOME/.ssh/config")"
+  if [ -n "$existing_hostname_line" ]; then
+    existing_line_no="${existing_hostname_line%%:*}"
+    existing_hostname="$(printf '%s\n' "${existing_hostname_line#*:}" | awk '{print $2}')"
+    if [ -n "$existing_hostname" ] && [ "$existing_hostname" != "$TS_HOSTNAME" ]; then
+      note "WARNING: ~/.ssh/config line $existing_line_no sets 'HostName $existing_hostname' but TS_HOSTNAME is now '$TS_HOSTNAME'"
+      note "WARNING: update that line by hand if you want 'ssh devcontainer' to reach the new hostname"
+    fi
+  fi
 elif confirm "Add a 'Host devcontainer' entry to ~/.ssh/config so 'ssh devcontainer' works?" "Y"; then
   {
     printf '\nHost devcontainer\n'
@@ -204,6 +239,48 @@ printf '\n' >&2
 [ -n "$TS_AUTHKEY" ] || TS_AUTHKEY="$existing_authkey"
 [ -n "$TS_AUTHKEY" ] || note "no auth key set - tailscale will need 'tailscale up' run by hand"
 
+# -------------------------------------------------------------- web ui ---
+
+printf '\n== Web UI ==\n\n' >&2
+
+default_webui_enabled="$(env_get WEBUI_ENABLED)"
+[ -n "$default_webui_enabled" ] || default_webui_enabled="true"
+if [ "$default_webui_enabled" = "true" ]; then default_webui_hint="Y"; else default_webui_hint="N"; fi
+
+if confirm "Enable the web UI?" "$default_webui_hint"; then
+  WEBUI_ENABLED=true
+else
+  WEBUI_ENABLED=false
+fi
+
+default_webui_port="$(env_get WEBUI_PORT)"; [ -n "$default_webui_port" ] || default_webui_port="8088"
+WEBUI_PORT="$default_webui_port"
+
+default_admin_logins="$(env_get WEBUI_ADMIN_LOGINS)"
+if [ -z "$default_admin_logins" ] && command -v tailscale >/dev/null 2>&1; then
+  # Best-effort only: parsed with sed, not jq - macOS has neither jq nor a
+  # guaranteed python3. Pulls every LoginName out of the JSON status dump.
+  default_admin_logins="$(tailscale status --json 2>/dev/null \
+    | sed -n 's/.*"LoginName": *"\([^"]*\)".*/\1/p' \
+    | sort -u | tr '\n' ',' | sed 's/,$//')"
+fi
+
+ask WEBUI_ADMIN_LOGINS "Admin logins (comma-separated Tailscale logins)" "$default_admin_logins"
+WEBUI_ADMIN_LOGINS="$(printf '%s' "$WEBUI_ADMIN_LOGINS" | tr -d '[:space:]')"
+
+if [ -z "$WEBUI_ADMIN_LOGINS" ]; then
+  note "WARNING: no admin logins set - NOBODY will be able to use the web ui"
+  note "fix later: edit WEBUI_ADMIN_LOGINS in .env, then 'docker compose up -d'"
+else
+  IFS=',' read -ra __webui_login_list <<< "$WEBUI_ADMIN_LOGINS"
+  for __login in "${__webui_login_list[@]}"; do
+    case "$__login" in
+      ?*@?*) ;;
+      *) die "invalid admin login '$__login' - expected the form user@example.com" ;;
+    esac
+  done
+fi
+
 # ------------------------------------------------- host-side mount sources ---
 
 printf '\n== Host paths ==\n\n' >&2
@@ -217,7 +294,7 @@ for f in .gitconfig .bashrc.ext; do
   [ -e "$HOME/$f" ] || { touch "$HOME/$f"; note "created $HOME/$f"; }
 done
 
-for d in .ssh .cline .claude Cline .vscode-server workspace; do
+for d in .ssh .cline .claude .config Cline .vscode-server workspace; do
   [ -e "$HOME/$d" ] || { mkdir -p "$HOME/$d"; note "created $HOME/$d/"; }
 done
 
@@ -231,8 +308,21 @@ HOME=$HOME
 TS_HOSTNAME=$TS_HOSTNAME
 SSH_PORT=$SSH_PORT
 BASE_IMAGE=$BASE_IMAGE
+WEBUI_ENABLED=$WEBUI_ENABLED
+WEBUI_ADMIN_LOGINS=$WEBUI_ADMIN_LOGINS
+WEBUI_PORT=$WEBUI_PORT
 EOF
 chmod 644 .env
+
+# Generated, not shipped: an installer directory that predates the web ui has
+# no serve.json, and Docker would otherwise materialise the bind-mount source
+# as a directory, breaking the tailscale container - same hazard the
+# .gitconfig/.bashrc.ext guard above exists for.
+if [ -d serve.json ]; then
+  die "serve.json is a directory but must be a file - remove it and re-run"
+fi
+write_serve_json "$TS_HOSTNAME" "$WEBUI_PORT" serve.json
+chmod 644 serve.json
 
 # env_file makes .secret mandatory, so it is written even when empty.
 ( umask 077; printf 'TS_AUTHKEY=%s\n' "$TS_AUTHKEY" > .secret )
@@ -245,7 +335,7 @@ chmod 600 .secret
 chmod 600 .sudopass
 
 printf '\n' >&2
-note "wrote .env, .secret and .sudopass (0600)"
+note "wrote .env, .secret and .sudopass (0600), and serve.json"
 
 # ------------------------------------------------------------------- start ---
 
@@ -266,4 +356,7 @@ printf '\n' >&2
 note "up. connect with:"
 printf '    ssh devcontainer\n' >&2
 printf '    ssh -p %s %s@127.0.0.1      (loopback fallback)\n' "$SSH_PORT" "$SSH_USER" >&2
+if [ "$WEBUI_ENABLED" = "true" ]; then
+  printf '    http://%s/      (web ui)\n' "$TS_HOSTNAME" >&2
+fi
 printf '\n' >&2
