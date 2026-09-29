@@ -1,4 +1,6 @@
-# devcontainer
+# TRIDE
+
+Tailscale-based Remote IDE
 
 An SSH-accessible Ubuntu dev container behind a Tailscale sidecar, bind-mounting
 your real home directory paths so tooling inside sees the same layout as the
