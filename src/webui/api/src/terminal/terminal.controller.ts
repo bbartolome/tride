@@ -18,7 +18,7 @@ import { WorkspacePathService } from '../workspace/workspace-path.service';
 import { computeSessionName, type TerminalMode } from './session-name.util';
 import type { MintedTicket } from './terminal-ticket.service';
 import { TerminalTicketService } from './terminal-ticket.service';
-import { TmuxService, type TmuxSessionInfo } from './tmux.service';
+import { FIELD_SEP, TmuxService, type TmuxSessionInfo } from './tmux.service';
 
 export interface TerminalSummary {
   id: string;
@@ -151,6 +151,12 @@ function parseShellLabel(record: Record<string, unknown>): string | undefined {
     throw validationError(
       'label must not contain control characters or newlines',
     );
+  }
+  // TmuxService's LIST_FORMAT joins session fields on FIELD_SEP ('|') — a
+  // label containing it would misalign every field after it when that
+  // session's tmux row gets parsed back.
+  if (trimmed.includes(FIELD_SEP)) {
+    throw validationError(`label must not contain "${FIELD_SEP}"`);
   }
   return trimmed.length > 0 ? trimmed : undefined;
 }

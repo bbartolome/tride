@@ -65,13 +65,27 @@ const SESSION_NAME_RE = /^wui-[0-9a-f]{12}$/;
 const NO_SERVER_RE = /no server running|error connecting to/i;
 const NO_SUCH_SESSION_RE = /can't find session/i;
 
+// A printable character, not a control byte: tmux's format renderer
+// sanitizes control characters appearing in the *template* text (not just
+// substituted values) before writing them out - '\t' silently becomes '_',
+// and other control bytes (e.g. '\x1f') come back octal-escaped as the
+// literal 4-character text "\037" rather than the raw byte. Either way the
+// chosen separator never survives, so every field collapses into one
+// unsplittable string and TmuxService.create's post-creation lookup could
+// never find the session it had just made - every create() call failed
+// with "not found immediately after creation". '|' is confirmed to pass
+// through unmangled. It cannot appear in session_name (hex-only, server-
+// generated), session_created (digits) or @webui_mode ('shell'/'claude');
+// parseShellLabel() rejects it from the one freeform field, @webui_label,
+// specifically so it can't collide here either.
+export const FIELD_SEP = '|';
 const LIST_FORMAT = [
   '#{session_name}',
   '#{session_created}',
   '#{@webui_label}',
   '#{@webui_mode}',
   '#{session_path}',
-].join('\t');
+].join(FIELD_SEP);
 
 interface RunResult {
   stdout: string;
@@ -248,7 +262,7 @@ export class TmuxService {
       .split('\n')
       .filter((line) => line.length > 0)
       .map((line) => {
-        const [name, createdSeconds, label, mode, cwd] = line.split('\t');
+        const [name, createdSeconds, label, mode, cwd] = line.split(FIELD_SEP);
         return {
           name,
           createdAt: Number(createdSeconds) * 1000,

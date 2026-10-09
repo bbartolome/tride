@@ -252,6 +252,19 @@ describe('Terminal (e2e)', () => {
     expect(hasSession(secondId)).toBe(true);
   });
 
+  it('POST /api/terminals mode:"shell" with a label containing "|" -> 400 VALIDATION_ERROR, no tmux session created', async () => {
+    // TmuxService.LIST_FORMAT joins session fields on '|' (FIELD_SEP) — a
+    // label containing it would misalign every field after it when that
+    // session's row gets parsed back, so it's rejected before any tmux call.
+    const res = await request(app.getHttpServer())
+      .post('/api/terminals')
+      .set('X-Webui-Request', '1')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .send({ cwd: 'proj', label: 'bad|label' })
+      .expect(400);
+    expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
   // -------------------------------------------------------------------
   // create — claude mode idempotency (F114/F120)
   // -------------------------------------------------------------------
