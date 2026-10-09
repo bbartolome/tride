@@ -3,6 +3,7 @@ import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { IncomingMessage } from 'http';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
+import type { WebuiConfigService } from '../config/webui-config.service';
 import type { Identity } from './identity.middleware';
 import { TailscaleAuthGuard } from './tailscale-auth.guard';
 import type { UsersService } from './users.service';
@@ -13,6 +14,10 @@ function createUsersService(
   return {
     isAllowed: jest.fn().mockResolvedValue(allowed),
   } as unknown as UsersService;
+}
+
+function createWebuiConfig(requireAuth: boolean): WebuiConfigService {
+  return { config: { requireAuth } } as unknown as WebuiConfigService;
 }
 
 function createContext(
@@ -37,6 +42,7 @@ describe('TailscaleAuthGuard', () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
       createUsersService(null),
+      createWebuiConfig(true),
     );
     const ctx = createContext(null, true);
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
@@ -46,6 +52,7 @@ describe('TailscaleAuthGuard', () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
       createUsersService(null),
+      createWebuiConfig(true),
     );
     const ctx = createContext(null, false);
     try {
@@ -64,6 +71,7 @@ describe('TailscaleAuthGuard', () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
       createUsersService(null),
+      createWebuiConfig(true),
     );
     const ctx = createContext({ login: 'nobody@example.com' }, false);
     try {
@@ -83,6 +91,7 @@ describe('TailscaleAuthGuard', () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
       createUsersService(null),
+      createWebuiConfig(true),
     );
     const ctx = createContext({ login: 'someone-else@github' }, false);
     try {
@@ -101,9 +110,48 @@ describe('TailscaleAuthGuard', () => {
     const guard = new TailscaleAuthGuard(
       new Reflector(),
       createUsersService({ role: 'admin', seeded: true }),
+      createWebuiConfig(true),
     );
     const identity: Identity = { login: 'admin@example.com' };
     const ctx = createContext(identity, false);
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(identity.role).toBe('admin');
+    expect(identity.seeded).toBe(true);
+  });
+
+  it('seeds an admin identity and lets the request through when requireAuth is false, even with no header', async () => {
+    const isAllowed = jest.fn().mockResolvedValue(null);
+    const usersService = { isAllowed } as unknown as UsersService;
+    const guard = new TailscaleAuthGuard(
+      new Reflector(),
+      usersService,
+      createWebuiConfig(false),
+    );
+    const req = { identity: null } as unknown as IncomingMessage;
+    const ctx = {
+      switchToHttp: () => ({ getRequest: () => req }),
+      getHandler: () => function handler() {},
+      getClass: () => class Controller {},
+    } as unknown as ExecutionContext;
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(req.identity).toEqual({
+      login: 'anonymous',
+      role: 'admin',
+      seeded: true,
+    });
+    expect(isAllowed).not.toHaveBeenCalled();
+  });
+
+  it('upgrades an existing identity to admin when requireAuth is false', async () => {
+    const guard = new TailscaleAuthGuard(
+      new Reflector(),
+      createUsersService(null),
+      createWebuiConfig(false),
+    );
+    const identity: Identity = { login: 'someone@example.com' };
+    const ctx = createContext(identity, false);
+
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(identity.role).toBe('admin');
     expect(identity.seeded).toBe(true);

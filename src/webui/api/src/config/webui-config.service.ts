@@ -19,6 +19,14 @@ export interface WebuiConfig {
    * the real location without touching code.
    */
   staticRoot: string | null;
+  /**
+   * Whether TailscaleAuthGuard enforces the identity/allowlist check.
+   * Defaults to `false`: out of the box the web UI trusts anything that can
+   * reach it, matching the "no ports, no auth, just the tailnet" deployment
+   * model. Set WEBUI_REQUIRE_AUTH=true to restore the identity/allowlist
+   * gate described in the README's security note.
+   */
+  requireAuth: boolean;
 }
 
 const DEFAULT_PORT = 8088;
@@ -32,6 +40,14 @@ function parsePort(raw: string | undefined): number {
   }
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PORT;
+}
+
+function parseBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return normalized === 'true' || normalized === '1';
 }
 
 function parseAdminLogins(raw: string | undefined): Set<string> {
@@ -59,6 +75,7 @@ export class WebuiConfigService {
       tmuxSocket: process.env.WEBUI_TMUX_SOCKET ?? DEFAULT_TMUX_SOCKET,
       tmuxConfPath: process.env.WEBUI_TMUX_CONF ?? DEFAULT_TMUX_CONF_PATH,
       staticRoot: process.env.WEBUI_STATIC_ROOT ?? null,
+      requireAuth: parseBoolean(process.env.WEBUI_REQUIRE_AUTH, false),
     });
   }
 

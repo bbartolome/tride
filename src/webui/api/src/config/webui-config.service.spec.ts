@@ -9,6 +9,7 @@ describe('WebuiConfigService', () => {
     'WEBUI_TMUX_SOCKET',
     'WEBUI_TMUX_CONF',
     'WEBUI_STATIC_ROOT',
+    'WEBUI_REQUIRE_AUTH',
     'HOME',
   ] as const;
 
@@ -44,6 +45,7 @@ describe('WebuiConfigService', () => {
       tmuxSocket: 'webui',
       tmuxConfPath: '/etc/devcontainer/webui-tmux.conf',
       staticRoot: null,
+      requireAuth: false,
     });
   });
 
@@ -56,6 +58,7 @@ describe('WebuiConfigService', () => {
     process.env.WEBUI_TMUX_SOCKET = 'devsocket';
     process.env.WEBUI_TMUX_CONF = '/tmp/custom-tmux.conf';
     process.env.WEBUI_STATIC_ROOT = '/srv/web/browser';
+    process.env.WEBUI_REQUIRE_AUTH = 'true';
 
     const service = new WebuiConfigService();
 
@@ -65,6 +68,7 @@ describe('WebuiConfigService', () => {
     expect(service.config.tmuxSocket).toBe('devsocket');
     expect(service.config.tmuxConfPath).toBe('/tmp/custom-tmux.conf');
     expect(service.config.staticRoot).toBe('/srv/web/browser');
+    expect(service.config.requireAuth).toBe(true);
     // trimmed, lowercased, deduped
     expect(service.config.adminLogins).toEqual(
       new Set(['alice@example.com', 'bob@example.com']),
@@ -80,5 +84,23 @@ describe('WebuiConfigService', () => {
   it('returns a frozen config object', () => {
     const service = new WebuiConfigService();
     expect(Object.isFrozen(service.config)).toBe(true);
+  });
+
+  it.each([
+    ['true', true],
+    ['TRUE', true],
+    ['1', true],
+    ['false', false],
+    ['0', false],
+    ['garbage', false],
+    [undefined, false],
+  ])('parses WEBUI_REQUIRE_AUTH=%s as %s', (raw, expected) => {
+    if (raw === undefined) {
+      delete process.env.WEBUI_REQUIRE_AUTH;
+    } else {
+      process.env.WEBUI_REQUIRE_AUTH = raw;
+    }
+    const service = new WebuiConfigService();
+    expect(service.config.requireAuth).toBe(expected);
   });
 });

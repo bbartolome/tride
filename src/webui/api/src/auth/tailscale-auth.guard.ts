@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import type { IncomingMessage } from 'http';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { ERROR_CODES } from '../common/error-codes';
+import { WebuiConfigService } from '../config/webui-config.service';
 import { UsersService } from './users.service';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class TailscaleAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly usersService: UsersService,
+    private readonly webuiConfig: WebuiConfigService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -28,6 +30,18 @@ export class TailscaleAuthGuard implements CanActivate {
     }
 
     const req = context.switchToHttp().getRequest<IncomingMessage>();
+
+    if (!this.webuiConfig.config.requireAuth) {
+      // Auth disabled (the default): don't enforce the identity/allowlist
+      // check, but still seed req.identity as a full admin so AdminGuard
+      // and UsersController.me() - both of which assume this guard already
+      // ran and populated role/seeded - don't fail closed.
+      req.identity ??= { login: 'anonymous' };
+      req.identity.role = 'admin';
+      req.identity.seeded = true;
+      return true;
+    }
+
     const identity = req.identity ?? null;
 
     if (identity === null) {

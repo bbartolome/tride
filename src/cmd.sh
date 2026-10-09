@@ -146,6 +146,7 @@ write_webui_env() {
     printf 'WEBUI_WORKSPACE_ROOT=%s\n' "${HOST_HOME_DIR}/${SSH_USER}/workspace"
     printf 'WEBUI_ADMIN_LOGINS=%s\n' "$admin_logins"
     printf 'WEBUI_TMUX_SOCKET=%s\n' "webui"
+    printf 'WEBUI_REQUIRE_AUTH=%s\n' "${WEBUI_REQUIRE_AUTH:-false}"
   } > "$env_file" 2>/dev/null || { echo "cmd.sh: failed to write $env_file - web ui will not start" >&2; return 0; }
 
   chmod 644 "$env_file" 2>/dev/null || true

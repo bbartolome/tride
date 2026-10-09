@@ -205,10 +205,12 @@ jobs:
       # write_webui_env) so /api/me has a known-good identity to check against.
       # No docker socket, authorized_keys or sudopass is provided - cmd.sh
       # tolerates all three being absent, so the container still starts clean.
+      # WEBUI_REQUIRE_AUTH=true pins this container to the enforced-auth path;
+      # the default (disabled) path is covered separately below.
       - name: Run container
         run: |
           set -euo pipefail
-          docker run -d --name dc-test -e WEBUI_ADMIN_LOGINS=admin@example.com dc-test
+          docker run -d --name dc-test -e WEBUI_ADMIN_LOGINS=admin@example.com -e WEBUI_REQUIRE_AUTH=true dc-test
 
       - name: Wait for API to become healthy
         run: |
@@ -270,3 +272,35 @@ jobs:
       - name: Clean up container
         if: always()
         run: docker rm -f dc-test || true
+
+      # WEBUI_REQUIRE_AUTH is left unset here to pin down the actual shipped
+      # default: no identity/allowlist check at all, every caller gets admin.
+      - name: Run container (default auth config)
+        run: |
+          set -euo pipefail
+          docker run -d --name dc-test-open dc-test
+
+      - name: Wait for API to become healthy (default auth config)
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if docker exec dc-test-open curl -fsS http://127.0.0.1:8088/healthz >/dev/null 2>&1; then
+              echo "healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "web ui never became healthy" >&2
+          docker logs dc-test-open || true
+          exit 1
+
+      - name: No header is accepted with role admin by default
+        run: |
+          set -euo pipefail
+          body="$(docker exec dc-test-open curl -s http://127.0.0.1:8088/api/me)"
+          echo "$body"
+          echo "$body" | grep -q '"role":"admin"'
+
+      - name: Clean up container (default auth config)
+        if: always()
+        run: docker rm -f dc-test-open || true

@@ -71,6 +71,9 @@ RUN bash -c "npm install -g n && n lts"
 # Claude Code CLI — the read-only "navigator" the claude-navigator MCP server shells out to.
 RUN npm install -g @anthropic-ai/claude-code
 
+# opencode CLI
+RUN npm install -g @opencode/cli
+
 # SDKMAN lives in a shared location so any runtime user can use it — this is what
 # keeps the per-user installer layer cheap. Group-writable by `sdkman` so a later
 # `sdk install` still works for the container user; the installer layer adds that

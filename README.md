@@ -36,6 +36,7 @@ The wizard asks for:
 | Tailscale auth key | — | `.secret` (mode 0600) |
 | Enable the web UI? | `Y` | `.env` (`WEBUI_ENABLED`) |
 | Admin logins (comma-separated Tailscale logins) | auto-filled from `tailscale status --json` when that's available on the host, otherwise blank | `.env` (`WEBUI_ADMIN_LOGINS`) |
+| Require Tailscale identity/allowlist auth for the web UI? | `N` (auth disabled) | `.env` (`WEBUI_REQUIRE_AUTH`) |
 
 It then creates any missing bind-mount sources, writes `.env` and `.secret`, and
 runs `docker compose build && docker compose up -d`. Re-running it is safe: your
@@ -49,7 +50,7 @@ it defaults to `8088` and only changes if you edit `.env` by hand and re-run
 ## Connecting
 
 ```bash
-ssh devcontainer                  # via Tailscale, if the wizard added the config entry
+ssh tride                         # via Tailscale, if the wizard added the config entry
 ssh -p 2222 <user>@127.0.0.1      # loopback fallback when the tailnet is down
 ```
 
@@ -81,13 +82,23 @@ so plain HTTP there isn't the exposure it looks like from the outside.
 `tride` resolves at all. You do not need to set up HTTPS certificates for
 this — the UI is served over HTTP.
 
-**Auth model:** Tailscale injects an identity header on every request; the UI
-checks the login against an allowlist. `WEBUI_ADMIN_LOGINS` seeds admins who
-can never be removed or demoted through the UI itself — that's the lockout
-guard — and admins manage everyone else at `/admin/users`. There is
-deliberately **no read-only role**: anyone who can open a terminal can already
-do anything (run arbitrary commands, read any file), so a read-only tier would
-be security theatre, not a real restriction.
+**Auth model:** by default (`WEBUI_REQUIRE_AUTH` unset or `false`), the web UI
+enforces **no identity check at all** — anything that can reach `http://tride`
+over the tailnet gets in with the admin role, no login, no allowlist. This
+matches the "no ports, no auth, just the tailnet" deployment this stack is
+built for, but it means the tailnet itself is the entire boundary: every
+tailnet peer is trusted as a full admin of this container's web UI, including
+`/admin/users`.
+
+Set `WEBUI_REQUIRE_AUTH=true` in `.env` (then `docker compose up -d`) to
+restore the stricter model: Tailscale injects an identity header on every
+request, and the UI checks the login against an allowlist.
+`WEBUI_ADMIN_LOGINS` seeds admins who can never be removed or demoted through
+the UI itself — that's the lockout guard — and admins manage everyone else at
+`/admin/users`. There is deliberately **no read-only role** even in this
+mode: anyone who can open a terminal can already do anything (run arbitrary
+commands, read any file), so a read-only tier would be security theatre, not
+a real restriction.
 
 **What it does:** browse `~/workspace`, see changed files and diffs, stage,
 unstage, discard and commit, stash and pop, switch and create branches, fetch,
@@ -108,7 +119,7 @@ itself.
 Escape hatch if the browser is unavailable:
 
 ```bash
-ssh devcontainer
+ssh tride
 tmux -L webui attach -t <id>
 ```
 
@@ -123,16 +134,26 @@ session instead of starting a second Claude against one working tree.
 
 ## Security note
 
-The identity check guards against **tailnet peers** — it does nothing against
-anything already running inside the container. Anyone with a shell there can
-`curl 127.0.0.1:8088` with a forged identity header and get in as anyone. Given
-that the Docker socket is already bind-mounted into the container, this doesn't
-grant an attacker anything they didn't already have — but it's worth knowing
-where the boundary actually is.
+With `WEBUI_REQUIRE_AUTH` at its default (unset/`false`), there is no identity
+boundary at all: **any tailnet peer** that can resolve `tride` is treated as a
+full admin of the web UI — the same access level as someone with a shell in
+the container. Only put this in front of a tailnet you fully trust. Set
+`WEBUI_REQUIRE_AUTH=true` if you want the UI gated by the Tailscale identity
+header instead.
 
-Related: **never enable Tailscale Funnel** for this hostname. Funnel traffic
-carries no identity headers at all, so turning it on would expose the UI to
-the entire internet with no auth.
+Even with `WEBUI_REQUIRE_AUTH=true`, the identity check only guards against
+**tailnet peers** — it does nothing against anything already running inside
+the container. Anyone with a shell there can `curl 127.0.0.1:8088` with a
+forged identity header and get in as anyone. Given that the Docker socket is
+already bind-mounted into the container, this doesn't grant an attacker
+anything they didn't already have — but it's worth knowing where the boundary
+actually is.
+
+Related: **never enable Tailscale Funnel** for this hostname, regardless of
+`WEBUI_REQUIRE_AUTH`. Funnel traffic carries no identity headers at all, so
+turning it on exposes the UI to the entire internet — with `WEBUI_REQUIRE_AUTH`
+disabled that means an anonymous admin shell open to the internet; even with
+it enabled, Funnel strips the only signal the allowlist check relies on.
 
 ## How it fits together
 
