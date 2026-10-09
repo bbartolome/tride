@@ -12,8 +12,40 @@ services:
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
       - TS_HOSTNAME=${TS_HOSTNAME}
-      - TS_SERVE_CONFIG=/config/serve.json
-    # Published here, not on devcontainer, because devcontainer shares this
+      - WEBUI_PORT=${WEBUI_PORT:-8088}
+    # Runs containerboot (the image's normal entrypoint) in the background,
+    # then applies the Serve config once the node has actually registered.
+    # This has to happen via the CLI rather than a static TS_SERVE_CONFIG
+    # file: Serve's HTTP mode keys its Web handler by the node's full
+    # MagicDNS cert domain, which isn't known until `tailscale up` completes,
+    # and keying it wrong means every request 404s (see wizard history).
+    # HTTP mode (not a raw TCPForward) matters beyond routing, too - it's
+    # what makes Serve terminate the connection and inject verified
+    # Tailscale-User-* identity headers, stripping any the client sent
+    # itself. tailscale-auth.guard.ts trusts those headers for the
+    # identity/allowlist check (webui-config.service.ts: requireAuth); a
+    # TCPForward would hand that trust to whoever opens the TCP connection,
+    # letting any tailnet peer spoof an admin login outright.
+    command:
+      - sh
+      - -c
+      - |
+        /usr/local/bin/containerboot &
+        cb_pid=$$!
+        trap 'kill $$cb_pid 2>/dev/null' TERM INT
+        i=0
+        while [ $$i -lt 60 ] && ! tailscale ip -4 >/dev/null 2>&1; do
+          sleep 1
+          i=$$((i + 1))
+        done
+        if tailscale ip -4 >/dev/null 2>&1; then
+          tailscale serve reset
+          tailscale serve --bg --http=80 "http://127.0.0.1:${WEBUI_PORT}"
+        else
+          echo "tailscale serve: node never came up after 60s, not serving" >&2
+        fi
+        wait $$cb_pid
+    # Published here, not on tride, because tride shares this
     # service's network namespace. Loopback-only: a fallback for when the
     # tailnet is unreachable.
     ports:
@@ -24,9 +56,8 @@ services:
       - net_admin
     volumes:
       - ts-state:/var/lib/tailscale
-      - ./serve.json:/config/serve.json:ro
 
-  devcontainer:
+  tride:
     build:
       context: .
       dockerfile: Dockerfile
@@ -34,8 +65,8 @@ services:
         SSH_USER: ${SSH_USER}
         HOST_HOME_DIR: ${HOST_HOME_DIR}
         BASE_IMAGE: ${BASE_IMAGE:-bbartolome/tride:latest}
-    image: devcontainer
-    container_name: devcontainer
+    image: tride
+    container_name: tride
     restart: unless-stopped
     network_mode: "service:tailscale"
     # cmd.sh is PID 1 and does not exec sshd, so it stays around as the
@@ -46,6 +77,7 @@ services:
       - WEBUI_ENABLED=${WEBUI_ENABLED:-true}
       - WEBUI_ADMIN_LOGINS=${WEBUI_ADMIN_LOGINS:-}
       - WEBUI_PORT=${WEBUI_PORT:-8088}
+      - WEBUI_REQUIRE_AUTH=${WEBUI_REQUIRE_AUTH:-false}
     volumes:
       - ${HOME}/.gitconfig:${HOST_HOME_DIR}/${SSH_USER}/.gitconfig
       - ${HOME}/.bashrc.ext:${HOST_HOME_DIR}/${SSH_USER}/.bashrc.ext

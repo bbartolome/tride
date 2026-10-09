@@ -52,24 +52,9 @@ confirm() { # confirm "prompt" "Y"|"N"  -> returns 0 for yes
   case "$__reply" in [yY]*) return 0 ;; *) return 1 ;; esac
 }
 
-# Emits a tailscale Serve config with two Web handler keys for the same
-# backend. "${TS_CERT_DOMAIN}" must reach the file LITERALLY - containerboot
-# (the tailscale image's entrypoint) substitutes it at runtime, not this
-# shell, so the format string is single-quoted. The second key is the bare
-# Tailscale hostname, substituted here: Serve matches on the request's Host
-# header, and a plain "http://<host>/" hit from inside the tailnet carries
-# Host: <hostname>, not the FQDN, so the FQDN-only key would never match it.
-# AllowFunnel is omitted on purpose - Funnel traffic carries no identity
-# headers, so turning it on would open an unauthenticated hole.
-write_serve_json() { # write_serve_json TS_HOSTNAME WEBUI_PORT OUT_FILE
-  local __host="$1" __port="$2" __out="$3"
-  printf '{\n  "TCP": {\n    "80": {\n      "HTTP": true\n    }\n  },\n  "Web": {\n    "${TS_CERT_DOMAIN}:80": {\n      "Handlers": {\n        "/": {\n          "Proxy": "http://127.0.0.1:%s"\n        }\n      }\n    },\n    "%s:80": {\n      "Handlers": {\n        "/": {\n          "Proxy": "http://127.0.0.1:%s"\n        }\n      }\n    }\n  }\n}\n' \
-    "$__port" "$__host" "$__port" > "$__out"
-}
-
 # ------------------------------------------------------------------ config ---
 
-printf '\n== devcontainer setup ==\n\n' >&2
+printf '\n== tride setup ==\n\n' >&2
 note "answers are written to .env (config) and .secret (credentials)"
 printf '\n' >&2
 
@@ -112,7 +97,7 @@ for pub in ${pubkeys[@]+"${pubkeys[@]}"}; do
   printf '   %d) %s  (%s)\n' "$i" "$(basename "$pub")" "$(awk '{print $1}' "$pub")" >&2
   i=$((i + 1))
 done
-printf '   g) generate a new dedicated key (devcontainer_ed25519)\n\n' >&2
+printf '   g) generate a new dedicated key (tride_ed25519)\n\n' >&2
 
 chosen=""
 generated=false
@@ -125,11 +110,11 @@ while [ -z "$chosen" ]; do
 
   case "$keychoice" in
     [gG])
-      keyfile="$HOME/.ssh/devcontainer_ed25519"
+      keyfile="$HOME/.ssh/tride_ed25519"
       if [ -f "$keyfile" ]; then
         note "reusing existing $keyfile"
       else
-        ssh-keygen -t ed25519 -N "" -C "devcontainer" -f "$keyfile" >/dev/null
+        ssh-keygen -t ed25519 -N "" -C "tride" -f "$keyfile" >/dev/null
         note "generated $keyfile"
       fi
       chosen="${keyfile}.pub"
@@ -162,14 +147,14 @@ else
 fi
 
 # Only offered when absent, so an existing entry is never rewritten.
-if [ -f "$HOME/.ssh/config" ] && grep -qE '^[[:space:]]*Host[[:space:]]+devcontainer[[:space:]]*$' "$HOME/.ssh/config"; then
-  note "~/.ssh/config already defines 'Host devcontainer' - leaving it alone"
+if [ -f "$HOME/.ssh/config" ] && grep -qE '^[[:space:]]*Host[[:space:]]+tride[[:space:]]*$' "$HOME/.ssh/config"; then
+  note "~/.ssh/config already defines 'Host tride' - leaving it alone"
   # Drift check only - never rewrite a user's ssh config silently. Finds the
-  # first HostName line inside the 'Host devcontainer' block and compares it
+  # first HostName line inside the 'Host tride' block and compares it
   # against the hostname just entered.
   existing_hostname_line="$(awk '
     /^[[:space:]]*Host[[:space:]]+/ {
-      inblock = ($0 ~ /^[[:space:]]*Host[[:space:]]+devcontainer[[:space:]]*$/)
+      inblock = ($0 ~ /^[[:space:]]*Host[[:space:]]+tride[[:space:]]*$/)
     }
     inblock && !found && /^[[:space:]]*HostName[[:space:]]+/ {
       print NR ":" $0
@@ -181,18 +166,18 @@ if [ -f "$HOME/.ssh/config" ] && grep -qE '^[[:space:]]*Host[[:space:]]+devconta
     existing_hostname="$(printf '%s\n' "${existing_hostname_line#*:}" | awk '{print $2}')"
     if [ -n "$existing_hostname" ] && [ "$existing_hostname" != "$TS_HOSTNAME" ]; then
       note "WARNING: ~/.ssh/config line $existing_line_no sets 'HostName $existing_hostname' but TS_HOSTNAME is now '$TS_HOSTNAME'"
-      note "WARNING: update that line by hand if you want 'ssh devcontainer' to reach the new hostname"
+      note "WARNING: update that line by hand if you want 'ssh tride' to reach the new hostname"
     fi
   fi
-elif confirm "Add a 'Host devcontainer' entry to ~/.ssh/config so 'ssh devcontainer' works?" "Y"; then
+elif confirm "Add a 'Host tride' entry to ~/.ssh/config so 'ssh tride' works?" "Y"; then
   {
-    printf '\nHost devcontainer\n'
+    printf '\nHost tride\n'
     printf '    HostName %s\n' "$TS_HOSTNAME"
     printf '    User %s\n' "$SSH_USER"
     printf '    IdentityFile %s\n' "${chosen%.pub}"
   } >> "$HOME/.ssh/config"
   chmod 600 "$HOME/.ssh/config"
-  note "added 'Host devcontainer' to ~/.ssh/config"
+  note "added 'Host tride' to ~/.ssh/config"
 fi
 
 # -------------------------------------------------------------- tailscale ---
@@ -281,6 +266,17 @@ else
   done
 fi
 
+default_require_auth="$(env_get WEBUI_REQUIRE_AUTH)"
+if [ "$default_require_auth" = "true" ]; then default_require_auth_hint="Y"; else default_require_auth_hint="N"; fi
+
+if confirm "Require Tailscale identity/allowlist auth for the web UI? (strongly recommended)" "$default_require_auth_hint"; then
+  WEBUI_REQUIRE_AUTH=true
+else
+  WEBUI_REQUIRE_AUTH=false
+  note "WARNING: web ui auth is disabled - anything that can reach the web ui is treated as admin"
+  note "fix later: edit WEBUI_REQUIRE_AUTH=true in .env, then 'docker compose up -d'"
+fi
+
 # ------------------------------------------------- host-side mount sources ---
 
 printf '\n== Host paths ==\n\n' >&2
@@ -311,18 +307,9 @@ BASE_IMAGE=$BASE_IMAGE
 WEBUI_ENABLED=$WEBUI_ENABLED
 WEBUI_ADMIN_LOGINS=$WEBUI_ADMIN_LOGINS
 WEBUI_PORT=$WEBUI_PORT
+WEBUI_REQUIRE_AUTH=$WEBUI_REQUIRE_AUTH
 EOF
 chmod 644 .env
-
-# Generated, not shipped: an installer directory that predates the web ui has
-# no serve.json, and Docker would otherwise materialise the bind-mount source
-# as a directory, breaking the tailscale container - same hazard the
-# .gitconfig/.bashrc.ext guard above exists for.
-if [ -d serve.json ]; then
-  die "serve.json is a directory but must be a file - remove it and re-run"
-fi
-write_serve_json "$TS_HOSTNAME" "$WEBUI_PORT" serve.json
-chmod 644 serve.json
 
 # env_file makes .secret mandatory, so it is written even when empty.
 ( umask 077; printf 'TS_AUTHKEY=%s\n' "$TS_AUTHKEY" > .secret )
@@ -354,7 +341,7 @@ docker compose up -d
 
 printf '\n' >&2
 note "up. connect with:"
-printf '    ssh devcontainer\n' >&2
+printf '    ssh tride\n' >&2
 printf '    ssh -p %s %s@127.0.0.1      (loopback fallback)\n' "$SSH_PORT" "$SSH_USER" >&2
 if [ "$WEBUI_ENABLED" = "true" ]; then
   printf '    http://%s/      (web ui)\n' "$TS_HOSTNAME" >&2
