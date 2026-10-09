@@ -41,7 +41,11 @@ function validationError(message: string): BadRequestException {
 }
 
 function requirePathParam(rawPath: unknown): string {
-  if (typeof rawPath !== 'string' || rawPath.length === 0) {
+  // '' is a legitimate value, not a missing one - it's how the workspace
+  // root itself is addressed (see BrowsePage.path and
+  // WorkspacePathService.resolve, both of which treat '' as root). Only
+  // an absent query param (undefined) counts as missing.
+  if (typeof rawPath !== 'string') {
     throw validationError('path query parameter is required');
   }
   return rawPath;

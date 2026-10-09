@@ -119,6 +119,27 @@ describe('Workspace fs (e2e)', () => {
     expect(byName.get('.dotfile')).toMatchObject({ type: 'file' });
   });
 
+  it('GET /api/fs/tree?path= (empty string) lists the workspace root, not a 400', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/fs/tree?path=')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(200);
+
+    const body = res.body as TreeResponseBody;
+    expect(body.path).toBe('');
+    expect(body.entries.find((e) => e.name === 'sub')).toMatchObject({
+      type: 'dir',
+    });
+  });
+
+  it('GET /api/fs/tree with no path query param at all -> 400 VALIDATION_ERROR', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/fs/tree')
+      .set('tailscale-user-login', SEEDED_LOGIN)
+      .expect(400);
+    expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
   it('GET /api/fs/tree marks a directory containing .git as isRepo:true', async () => {
     const repoDir = join(workspaceRoot, 'a-repo');
     mkdirSync(join(repoDir, '.git'), { recursive: true });
