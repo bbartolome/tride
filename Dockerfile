@@ -7,6 +7,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y openssh-server sudo bash-completion keychain dos2unix curl zip unzip vim git gnupg nodejs npm
 RUN apt-get clean
 
+# The workspace bind mount keeps the host's UIDs, which almost never match
+# SSH_USER's UID inside the container (built at image-build time, fixed;
+# the host UID varies per machine). Git's dubious-ownership check then
+# refuses every repo under it - this is the container's own system config,
+# not the user's bind-mounted ~/.gitconfig, so it doesn't touch anything on
+# the host. Safe here specifically because the whole workspace is already
+# the single SSH_USER's own trusted files, not multi-tenant.
+RUN git config --system --add safe.directory '*'
+
 WORKDIR /root
 
 # Create the SSH directory and configure permissions
