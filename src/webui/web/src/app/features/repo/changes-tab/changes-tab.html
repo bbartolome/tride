@@ -13,7 +13,13 @@
   }
 
   <div class="bulk-actions">
-    <button type="button" [disabled]="actionBusy()" (click)="stageAll()">Stage all</button>
+    <button
+      type="button"
+      [disabled]="actionBusy() || (unstaged().length === 0 && untracked().length === 0)"
+      (click)="stageAll()"
+    >
+      Stage all
+    </button>
     <button
       type="button"
       [disabled]="actionBusy() || selectedUnstagedPaths().length === 0"
@@ -21,7 +27,13 @@
     >
       Stage selected ({{ selectedUnstagedPaths().length }})
     </button>
-    <button type="button" [disabled]="actionBusy()" (click)="unstageAll()">Unstage all</button>
+    <button
+      type="button"
+      [disabled]="actionBusy() || staged().length === 0"
+      (click)="unstageAll()"
+    >
+      Unstage all
+    </button>
     <button
       type="button"
       [disabled]="actionBusy() || selectedStagedPaths().length === 0"
