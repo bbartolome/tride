@@ -147,15 +147,6 @@
   box-sizing: border-box;
 }
 
-html {
-  // Without this, Safari's text-inflation heuristic independently boosts
-  // the font size of text blocks (e.g. each diff line) based on their
-  // content, making otherwise-identical monospace lines render at visibly
-  // different sizes.
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
 html,
 body {
   margin: 0;

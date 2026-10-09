@@ -8,6 +8,13 @@
   padding-bottom: 1rem;
   font-family: ui-monospace, monospace;
   font-size: 0.8125rem;
+  // Safari's text-inflation heuristic independently boosts the font size
+  // of each text block based on its content, making otherwise-identical
+  // diff lines render at visibly different sizes. Scoped to the diff
+  // itself so the rest of the app keeps relying on that inflation for
+  // readable text at its small declared rem sizes.
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .hunk {
