@@ -40,14 +40,6 @@ export const routes: Routes = [
     canActivate: [meGuard],
   },
   {
-    path: 'terminals',
-    loadComponent: () =>
-      import('./features/terminal/terminals-list/terminals-list').then(
-        (m) => m.TerminalsList,
-      ),
-    canActivate: [meGuard],
-  },
-  {
     path: 'terminal/:id',
     loadComponent: () =>
       import('./features/terminal/terminal-view/terminal-view').then(

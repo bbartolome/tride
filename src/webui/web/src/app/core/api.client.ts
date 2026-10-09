@@ -281,10 +281,6 @@ export class ApiClient {
 
   // ---- terminals (terminal/terminal.controller.ts) ----
 
-  listTerminals(): Observable<TerminalSummary[]> {
-    return this.get<TerminalSummary[]>('/api/terminals');
-  }
-
   createTerminal(
     cwd: string,
     opts?: { mode?: TerminalMode; label?: string },
@@ -293,13 +289,6 @@ export class ApiClient {
       cwd,
       ...opts,
     });
-  }
-
-  removeTerminal(id: string): Observable<void> {
-    return this.mutate<void>(
-      'delete',
-      `/api/terminals/${encodeURIComponent(id)}`,
-    );
   }
 
   mintTerminalTicket(id: string): Observable<MintedTicket> {
