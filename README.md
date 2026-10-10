@@ -1,5 +1,9 @@
 # TRIDE
 
+**Have you TRIDE it?**
+
+<p align="center"><img src="docs/tride-webui-mobile.gif" alt="TRIDE web UI on a phone: repo list, changes, diff, log, branch menu, browse" width="300"></p>
+
 Tailscale-based Remote IDE
 
 An SSH-accessible Ubuntu dev container behind a Tailscale sidecar, bind-mounting
@@ -71,8 +75,6 @@ truncates that file in place, so the plaintext does not linger on the host.
 > restart is fine. Re-run `./wizard.sh` to set it again.
 
 ## Web UI
-
-<p align="center"><img src="docs/tride-webui-mobile.gif" alt="TRIDE web UI on a phone: repo list, changes, diff, log, branch menu, browse" width="300"></p>
 
 If the wizard enabled it, the web UI is at **`http://tride`** — plain HTTP on
 port 80, not HTTPS. That's deliberate: Tailscale only issues a certificate for
