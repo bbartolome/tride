@@ -65,7 +65,7 @@ services:
         SSH_USER: ${SSH_USER}
         HOST_HOME_DIR: ${HOST_HOME_DIR}
         BASE_IMAGE: ${BASE_IMAGE:-bbartolome/tride:latest}
-    image: tride
+    image: bbartolome/tride:latest
     container_name: tride
     restart: unless-stopped
     network_mode: "service:tailscale"
