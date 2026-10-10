@@ -100,6 +100,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.9375rem;
+  // Safari's text-inflation heuristic boosts short truncated labels (e.g.
+  // ".claude") more than long ones that already fill the row, making
+  // otherwise-identical path labels render at inconsistent sizes.
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .orig-path {
