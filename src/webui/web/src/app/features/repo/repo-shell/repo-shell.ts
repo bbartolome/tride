@@ -14,7 +14,7 @@ import { FORCE_PUSH_CONFIRM_TEXT } from '../../../core/confirm-literals';
 import { ApiError } from '../../../core/error.interceptor';
 import { GitStatusResult } from '../../../core/api.types';
 import { ConfirmDialogService } from '../../../shared/confirm-dialog/confirm-dialog.service';
-import { BranchesTab } from '../branches-tab/branches-tab';
+import { BranchSwitcher } from '../branch-switcher/branch-switcher';
 import { ChangesTab } from '../changes-tab/changes-tab';
 import { FilesTab } from '../files-tab/files-tab';
 import { LogTab } from '../log-tab/log-tab';
@@ -22,12 +22,11 @@ import { StashTab } from '../stash-tab/stash-tab';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
-type RepoTab = 'browse' | 'changes' | 'branches' | 'log' | 'stash';
+type RepoTab = 'browse' | 'changes' | 'log' | 'stash';
 
 const TABS: { id: RepoTab; label: string }[] = [
   { id: 'browse', label: 'Browse' },
   { id: 'changes', label: 'Changes' },
-  { id: 'branches', label: 'Branches' },
   { id: 'log', label: 'Log' },
   { id: 'stash', label: 'Stash' },
 ];
@@ -69,7 +68,7 @@ type RemoteActionKind = 'fetch' | 'pull' | 'push' | 'force-push';
 @Component({
   selector: 'app-repo-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FilesTab, ChangesTab, BranchesTab, LogTab, StashTab],
+  imports: [FilesTab, ChangesTab, BranchSwitcher, LogTab, StashTab],
   templateUrl: './repo-shell.html',
   styleUrl: './repo-shell.scss',
 })
@@ -81,6 +80,8 @@ export class RepoShell {
   readonly repo = input.required<string>();
 
   protected readonly tabs = TABS;
+  /** Bumped when the branch changes so the tab content re-mounts and reloads. */
+  protected readonly refreshKey = signal(0);
   protected readonly activeTab = signal<RepoTab>('changes');
 
   protected readonly status = signal<LoadStatus>('idle');
@@ -108,6 +109,11 @@ export class RepoShell {
     effect(() => {
       void this.load(this.repo());
     });
+  }
+
+  protected onBranchChanged(): void {
+    this.refreshKey.update((k) => k + 1);
+    void this.load(this.repo());
   }
 
   protected selectTab(tab: RepoTab): void {

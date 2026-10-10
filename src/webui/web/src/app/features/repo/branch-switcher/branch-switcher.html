@@ -1,0 +1,94 @@
+<button
+  type="button"
+  class="toggle"
+  aria-haspopup="true"
+  [attr.aria-expanded]="open()"
+  (click)="toggle()"
+>
+  @if (detached()) {
+    <span class="badge detached">detached</span>
+  } @else {
+    <span class="branch">{{ current() ?? 'no branch' }}</span>
+  }
+  <span class="caret" aria-hidden="true">▾</span>
+</button>
+
+@if (open()) {
+  <div class="panel" role="menu">
+    @if (loadError(); as lerr) {
+      <p class="error" role="alert">{{ lerr.message }}</p>
+    }
+    @if (actionError(); as aerr) {
+      <p class="error" role="alert">{{ aerr.message }}</p>
+    }
+
+    <div class="new-branch">
+      <input
+        type="text"
+        autocomplete="off"
+        autocapitalize="off"
+        placeholder="New branch name"
+        aria-label="New branch name"
+        [value]="newBranchName()"
+        (input)="onNameInput($event)"
+        (keydown.enter)="create()"
+      />
+      <button
+        type="button"
+        [disabled]="busy() || newBranchName().trim().length === 0"
+        (click)="create()"
+      >
+        Create
+      </button>
+    </div>
+
+    @if (branches(); as b) {
+      <ul class="branch-list">
+        @for (branch of b.local; track branch.name) {
+          <li class="row" [class.current]="branch.name === b.current">
+            <button
+              type="button"
+              class="pick"
+              role="menuitem"
+              [disabled]="busy()"
+              (click)="checkout(branch.name)"
+            >
+              <span class="check" aria-hidden="true">{{ branch.name === b.current ? '✓' : '' }}</span>
+              <span class="name">{{ branch.name }}</span>
+              @if (branch.ahead > 0) {
+                <span class="ahead">↑{{ branch.ahead }}</span>
+              }
+              @if (branch.behind > 0) {
+                <span class="behind">↓{{ branch.behind }}</span>
+              }
+            </button>
+            @if (branch.name !== b.current) {
+              @if (forceCandidate() === branch.name) {
+                <button
+                  type="button"
+                  class="delete danger"
+                  [disabled]="busy()"
+                  (click)="forceRemove(branch.name)"
+                >
+                  Force delete
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  class="delete"
+                  [attr.aria-label]="'Delete ' + branch.name"
+                  [disabled]="busy()"
+                  (click)="remove(branch.name)"
+                >
+                  Delete
+                </button>
+              }
+            }
+          </li>
+        }
+      </ul>
+    } @else if (!loadError()) {
+      <p class="loading">Loading branches…</p>
+    }
+  </div>
+}

@@ -3,11 +3,12 @@
     <h1>{{ repoName() }}</h1>
     @if (summary(); as s) {
       <div class="header-meta">
-        @if (s.detached) {
-          <span class="badge detached">detached</span>
-        } @else if (s.branch !== null) {
-          <span class="branch">{{ s.branch }}</span>
-        }
+        <app-branch-switcher
+          [repo]="repo()"
+          [current]="s.branch"
+          [detached]="s.detached"
+          (changed)="onBranchChanged()"
+        />
         @if (s.ahead > 0) {
           <span class="ahead">↑{{ s.ahead }}</span>
         }
@@ -78,6 +79,7 @@
 </nav>
 
 <div class="tab-content">
+  @for (key of [refreshKey()]; track key) {
   @switch (activeTab()) {
     @case ('browse') {
       <app-files-tab [repo]="repo()" />
@@ -85,14 +87,12 @@
     @case ('changes') {
       <app-changes-tab [repo]="repo()" />
     }
-    @case ('branches') {
-      <app-branches-tab [repo]="repo()" />
-    }
     @case ('log') {
       <app-log-tab [repo]="repo()" />
     }
     @case ('stash') {
       <app-stash-tab [repo]="repo()" />
     }
+  }
   }
 </div>

@@ -93,7 +93,7 @@ describe('RepoShell', () => {
     expect(root.querySelector('.behind')?.textContent).toContain('1');
   });
 
-  it('renders all four tabs, with Changes active and rendered by default', async () => {
+  it('renders all tabs, with Changes active and rendered by default', async () => {
     const fixture = create();
     await fixture.whenStable();
     const root = fixture.nativeElement as HTMLElement;
@@ -101,7 +101,7 @@ describe('RepoShell', () => {
     const tabLabels = Array.from(root.querySelectorAll('.tab')).map(
       (el) => el.textContent?.trim(),
     );
-    expect(tabLabels).toEqual(['Browse', 'Changes', 'Branches', 'Log', 'Stash']);
+    expect(tabLabels).toEqual(['Browse', 'Changes', 'Log', 'Stash']);
     expect(root.querySelector('.tab.active')?.textContent?.trim()).toBe('Changes');
     expect(root.querySelector('app-changes-tab')).toBeTruthy();
   });
@@ -112,14 +112,13 @@ describe('RepoShell', () => {
     const root = fixture.nativeElement as HTMLElement;
 
     const buttons = Array.from(root.querySelectorAll('.tab')) as HTMLButtonElement[];
-    const branchesBtn = buttons.find((b) => b.textContent?.trim() === 'Branches');
+    const branchesBtn = buttons.find((b) => b.textContent?.trim() === 'Stash');
     branchesBtn?.click();
     await fixture.whenStable();
 
     expect(root.querySelector('app-changes-tab')).toBeNull();
-    expect(root.querySelector('app-branches-tab')).toBeTruthy();
-    expect(gitBranches).toHaveBeenCalledWith('nested/my-repo');
-    expect(root.querySelector('.tab.active')?.textContent?.trim()).toBe('Branches');
+    expect(root.querySelector('app-stash-tab')).toBeTruthy();
+    expect(root.querySelector('.tab.active')?.textContent?.trim()).toBe('Stash');
 
     const logBtn = buttons.find((b) => b.textContent?.trim() === 'Log');
     logBtn?.click();
