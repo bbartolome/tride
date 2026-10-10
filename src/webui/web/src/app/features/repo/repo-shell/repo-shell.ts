@@ -7,7 +7,7 @@ import {
   input,
   signal,
 } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ApiClient } from '../../../core/api.client';
 import { FORCE_PUSH_CONFIRM_TEXT } from '../../../core/confirm-literals';
@@ -16,14 +16,16 @@ import { GitStatusResult } from '../../../core/api.types';
 import { ConfirmDialogService } from '../../../shared/confirm-dialog/confirm-dialog.service';
 import { BranchesTab } from '../branches-tab/branches-tab';
 import { ChangesTab } from '../changes-tab/changes-tab';
+import { FilesTab } from '../files-tab/files-tab';
 import { LogTab } from '../log-tab/log-tab';
 import { StashTab } from '../stash-tab/stash-tab';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
-type RepoTab = 'changes' | 'branches' | 'log' | 'stash';
+type RepoTab = 'browse' | 'changes' | 'branches' | 'log' | 'stash';
 
 const TABS: { id: RepoTab; label: string }[] = [
+  { id: 'browse', label: 'Browse' },
   { id: 'changes', label: 'Changes' },
   { id: 'branches', label: 'Branches' },
   { id: 'log', label: 'Log' },
@@ -67,7 +69,7 @@ type RemoteActionKind = 'fetch' | 'pull' | 'push' | 'force-push';
 @Component({
   selector: 'app-repo-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, ChangesTab, BranchesTab, LogTab, StashTab],
+  imports: [FilesTab, ChangesTab, BranchesTab, LogTab, StashTab],
   templateUrl: './repo-shell.html',
   styleUrl: './repo-shell.scss',
 })
@@ -84,13 +86,6 @@ export class RepoShell {
   protected readonly status = signal<LoadStatus>('idle');
   protected readonly summary = signal<GitStatusResult | null>(null);
   protected readonly error = signal<ApiError | null>(null);
-
-  protected readonly browseLink = computed(() => [
-    '/browse',
-    ...this.repo()
-      .split('/')
-      .filter((s) => s.length > 0),
-  ]);
 
   protected readonly repoName = computed(() => {
     const segments = this.repo()

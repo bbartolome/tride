@@ -101,7 +101,7 @@ describe('RepoShell', () => {
     const tabLabels = Array.from(root.querySelectorAll('.tab')).map(
       (el) => el.textContent?.trim(),
     );
-    expect(tabLabels).toEqual(['Changes', 'Branches', 'Log', 'Stash']);
+    expect(tabLabels).toEqual(['Browse', 'Changes', 'Branches', 'Log', 'Stash']);
     expect(root.querySelector('.tab.active')?.textContent?.trim()).toBe('Changes');
     expect(root.querySelector('app-changes-tab')).toBeTruthy();
   });

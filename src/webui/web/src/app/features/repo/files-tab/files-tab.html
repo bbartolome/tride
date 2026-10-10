@@ -1,0 +1,40 @@
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  @for (crumb of breadcrumbs(); track crumb.path; let last = $last) {
+    @if (last) {
+      <span class="crumb current">{{ crumb.label }}</span>
+    } @else {
+      <button type="button" class="crumb" (click)="goTo(crumb.path)">{{ crumb.label }}</button>
+      <span class="sep" aria-hidden="true">/</span>
+    }
+  }
+</nav>
+
+@if (status() === 'error') {
+  <app-empty-state
+    [message]="error()?.message ?? 'Failed to load this directory.'"
+    [retry]="reload"
+  />
+} @else if (status() === 'loading' && entries().length === 0) {
+  <p class="loading">Loading…</p>
+} @else if (entries().length === 0) {
+  <app-empty-state message="This directory is empty." />
+} @else {
+  <ul class="entry-list">
+    @for (entry of sortedEntries(); track entry.name) {
+      <li class="entry">
+        @if (entry.type === 'dir') {
+          <button type="button" class="entry-main" (click)="open(entry.name)">
+            <span class="name">{{ entry.name }}</span>
+          </button>
+        } @else {
+          <span class="entry-main file">
+            <span class="name">{{ entry.name }}</span>
+            @if (entry.size !== undefined) {
+              <span class="size">{{ entry.size }} B</span>
+            }
+          </span>
+        }
+      </li>
+    }
+  </ul>
+}

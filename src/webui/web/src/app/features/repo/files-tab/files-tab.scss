@@ -1,0 +1,78 @@
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem 0;
+  font-size: 0.875rem;
+}
+
+.crumb {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+
+  &.current {
+    color: var(--muted, #666);
+    text-decoration: none;
+  }
+}
+
+.sep {
+  color: var(--muted, #666);
+}
+
+.loading {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted, #666);
+}
+
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0 1rem 1rem;
+  list-style: none;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border, #eee);
+}
+
+.entry-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+
+  .name {
+    overflow-wrap: anywhere;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  &.file .name {
+    color: var(--muted, #666);
+  }
+
+  .size {
+    flex-shrink: 0;
+    color: var(--muted, #666);
+    font-size: 0.75rem;
+  }
+}

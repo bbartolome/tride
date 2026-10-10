@@ -17,7 +17,6 @@
       </div>
     }
   </div>
-  <a class="browse-files" [routerLink]="browseLink()">Browse files</a>
   <button
     type="button"
     class="terminal-here"
@@ -80,6 +79,9 @@
 
 <div class="tab-content">
   @switch (activeTab()) {
+    @case ('browse') {
+      <app-files-tab [repo]="repo()" />
+    }
     @case ('changes') {
       <app-changes-tab [repo]="repo()" />
     }
