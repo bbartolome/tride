@@ -64,9 +64,7 @@
   text-decoration: none;
 
   .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
