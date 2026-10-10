@@ -49,6 +49,10 @@ RUN set -eu; \
     printf 'prefix=%s/.npm-global\n' "$home" > "$home/.npmrc"; \
     mkdir -p "$home/.npm-global" "$home/.n"; \
     \
+    # The web UI realpaths its workspace root at startup and crashes if it is
+    # absent, so it must exist even when the host mounts nothing over it.
+    mkdir -p "$home/workspace"; \
+    \
     # Ubuntu's stock .bashrc returns early for non-interactive shells, and bash
     # sources .bashrc for `ssh host <command>`. Anything a scripted SSH call
     # needs must therefore go ABOVE that guard - appending leaves java, mvn and
