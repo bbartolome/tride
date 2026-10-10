@@ -7,7 +7,7 @@ import {
   input,
   signal,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ApiClient } from '../../../core/api.client';
 import { FORCE_PUSH_CONFIRM_TEXT } from '../../../core/confirm-literals';
@@ -67,7 +67,7 @@ type RemoteActionKind = 'fetch' | 'pull' | 'push' | 'force-push';
 @Component({
   selector: 'app-repo-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ChangesTab, BranchesTab, LogTab, StashTab],
+  imports: [RouterLink, ChangesTab, BranchesTab, LogTab, StashTab],
   templateUrl: './repo-shell.html',
   styleUrl: './repo-shell.scss',
 })
@@ -84,6 +84,13 @@ export class RepoShell {
   protected readonly status = signal<LoadStatus>('idle');
   protected readonly summary = signal<GitStatusResult | null>(null);
   protected readonly error = signal<ApiError | null>(null);
+
+  protected readonly browseLink = computed(() => [
+    '/browse',
+    ...this.repo()
+      .split('/')
+      .filter((s) => s.length > 0),
+  ]);
 
   protected readonly repoName = computed(() => {
     const segments = this.repo()

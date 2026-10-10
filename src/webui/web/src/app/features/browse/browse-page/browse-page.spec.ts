@@ -71,7 +71,7 @@ describe('BrowsePage', () => {
     expect(names).toEqual(['alpha-dir', 'zeta-repo', 'notes', 'readme.md']);
   });
 
-  it('badges only the isRepo directory and links it to /repo/<path>', async () => {
+  it('badges only the isRepo directory and links it to /browse/<path> with an Open as repo link', async () => {
     const fixture = createAt('a/b');
     await fixture.whenStable();
 
@@ -79,7 +79,12 @@ describe('BrowsePage', () => {
     expect(badges.length).toBe(1);
 
     const repoRow = badges[0].closest('.entry-main') as HTMLAnchorElement;
-    expect(repoRow.getAttribute('href')).toBe('/repo/a/b/zeta-repo');
+    expect(repoRow.getAttribute('href')).toBe('/browse/a/b/zeta-repo');
+
+    const openRepo = fixture.nativeElement.querySelector(
+      '.open-repo',
+    ) as HTMLAnchorElement;
+    expect(openRepo.getAttribute('href')).toBe('/repo/a/b/zeta-repo');
 
     const plainDirRow = fixture.nativeElement.querySelector(
       '.entry-main[href="/browse/a/b/alpha-dir"]',

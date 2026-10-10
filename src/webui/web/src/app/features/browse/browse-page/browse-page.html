@@ -28,10 +28,11 @@
     @for (entry of sortedEntries(); track entry.name) {
       <li class="entry" [class.dir]="entry.type === 'dir'">
         @if (entry.type === 'dir' && entry.isRepo) {
-          <a class="entry-main" [routerLink]="repoLink(entry.name)">
+          <a class="entry-main" [routerLink]="browseLink(entryPath(entry.name))">
             <span class="name">{{ entry.name }}</span>
             <span class="badge repo">repo</span>
           </a>
+          <a class="open-repo" [routerLink]="repoLink(entry.name)">Open as repo</a>
         } @else if (entry.type === 'dir') {
           <a class="entry-main" [routerLink]="browseLink(entryPath(entry.name))">
             <span class="name">{{ entry.name }}</span>

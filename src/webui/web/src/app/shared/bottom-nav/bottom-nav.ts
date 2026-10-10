@@ -16,6 +16,7 @@ interface NavTab {
 
 const TABS: NavTab[] = [
   { path: '/', label: 'Repos', icon: '📁' },
+  { path: '/browse', label: 'Browse', icon: '🗂️' },
   { path: '/admin', label: 'Admin', icon: '⚙️' },
 ];
 
